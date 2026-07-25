@@ -9,3 +9,18 @@ dist/
 *.log
 *.db
 *.db-journal
+archive/
+*.part
+
+# Local pipeline state: SQLite store, gateway cache, generated subtitles,
+# render intermediates. Regenerable and large.
+.mashup/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Generated mashups and experiment runs.
+output/
+experiment/

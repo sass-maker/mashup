@@ -1,0 +1,28 @@
+---
+import Timeline from '../components/Timeline';
+import '../styles/app.css';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <meta name="color-scheme" content="light dark" />
+    <title>mashup editor</title>
+  </head>
+  <body>
+    <!--
+      Astro is the shell; the timeline is a React island because every control
+      on it mutates one shared document.
+    -->
+    <Timeline client:load />
+    <noscript>
+      <p class="fatal">
+        The timeline editor needs JavaScript. Without it, use
+        <code>mashup preview &lt;edl.json&gt;</code> for the read-only transcript.
+      </p>
+    </noscript>
+  </body>
+</html>

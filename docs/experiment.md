@@ -1,0 +1,162 @@
+# The validation experiment
+
+mashup exists to answer one question: **does structure-aware sequencing beat
+retrieving relevant clips and joining them?** This page is how you run that
+comparison and how you read the answer.
+
+The comparison is blind and the churn measurement is mechanical, both on
+purpose — they live in `src/mashup/experiment.py` rather than in a spreadsheet
+someone fills in by hand.
+
+> **Status:** the harness is written and unit-tested. It has never been run
+> against a real archive, and there are no `mashup experiment` / `mashup churn`
+> CLI commands yet — today the functions are importable only. See
+> [`PROJECT_STATUS.md`](../PROJECT_STATUS.md).
+
+## The five conditions
+
+All five are generated from one brief and one target duration, in one run, by
+the same planning machinery — see the shared-beam-search decision in
+[`docs/decisions.md`](decisions.md#3-one-shared-beam-search-three-weight-profiles).
+
+| Condition | Role | What it does |
+|---|---|---|
+| `random` | control | Topic-matched clips above a relevance floor, shuffled under a fixed seed |
+| `semantic` | the bar to beat | Top-relevance clips in relevance order — "retrieve and concatenate" |
+| `chronological` | AI cut | Archive order preserved; selection optimised |
+| `escalation` | AI cut | Build to a peak |
+| `callback` | AI cut | Plant early, pay off late |
+
+If the planner produces no output for any of the five, the run fails naming the
+missing condition rather than quietly comparing four.
+
+## Running it
+
+```python
+from pathlib import Path
+from mashup.config import load_config
+from mashup.experiment import run_experiment, summarise_ratings, timeline_churn
+
+cfg = load_config()
+blinds = run_experiment(
+    "seven minutes on airline travel",
+    cfg,
+    outdir=Path("study/run-01"),
+    target=420.0,
+    seed=0,
+)
+```
+
+The archive must already be ingested, enriched and embedded — see the
+[README quickstart](../README.md#quickstart).
+
+## Blind labelling and the withheld key
+
+`run_experiment` shuffles the five conditions under `random.Random(seed)` and
+writes them as `A.json` … `E.json`. The mapping never appears in those files.
+
+It goes into a separate `KEY.json` alongside the prompt, target duration, seed,
+generation timestamp and each variant's planner score. **`KEY.json` is the file
+you withhold from raters.** Hand over the labelled variants (rendered to MP4)
+and `ratings.csv`, and nothing else.
+
+The seed is recorded so the assignment is reproducible: regenerating with the
+same seed puts the same conditions behind the same letters.
+
+```
+study/run-01/
+  A.json  B.json  C.json  D.json  E.json   # blind variants
+  KEY.json                                  # withhold from raters
+  ratings.csv                               # hand to raters, one row per viewer per variant
+```
+
+## The rating sheet
+
+`write_rating_sheet` emits 25 blank rows — 5 viewers × 5 variants — with these
+columns:
+
+| Column | Meaning |
+|---|---|
+| `viewer` | Viewer number, 1–5. Pre-filled. |
+| `variant` | Blind label A–E. Pre-filled. |
+| `overall_rank` | 1 = best of the five, for this viewer. This is the preference signal. |
+| `clips_total` | How many clips the viewer counted in this variant. Denominator for the next column. |
+| `clips_context_incomplete` | How many clips felt like they needed setup the viewer had not seen. |
+| `defects` | Count of obvious repetitions or broken transitions. |
+| `would_publish` | yes/no — would a creator ship this? Recorded but not scored by the criteria. |
+| `notes` | Free text. |
+
+Analysis ignores any row with a blank `overall_rank`, so a partially completed
+sheet still yields a result; a sheet with no completed rows raises.
+
+## Success criteria
+
+`summarise_ratings(outdir)` unblinds the sheet against `KEY.json` and evaluates
+three criteria against the **best-performing AI condition** — the one that beat
+the semantic baseline for the most viewers.
+
+| Criterion | Threshold | Constant | Computed as |
+|---|---|---|---|
+| Preference | ≥ 4 of 5 viewers rank it above `semantic` | `PREFERENCE_THRESHOLD = 4` | `beats_semantic[best] >= min(4, viewers)` |
+| Context completeness | mean ≥ 0.80 | `CONTEXT_COMPLETE_TARGET = 0.80` | mean of `1 - clips_context_incomplete / clips_total` |
+| Defects | mean < 2 per seven-minute cut | `MAX_DEFECTS_PER_SEVEN_MIN = 2` | mean of the `defects` column |
+
+Two details worth knowing before you read the output:
+
+- The threshold is `min(4, viewers)`, so a run with fewer than five completed
+  viewers is scored against the number of viewers you actually have. Do not
+  read a "pass" from two viewers as a pass of the stated criterion.
+- A viewer who ranked the AI cuts but left `semantic` blank contributes nothing
+  to the preference count. Incomplete sheets weaken the signal silently.
+
+The summary also returns the per-condition `beats_semantic` counts, the mean
+context completeness and mean defect count per condition, so a near-miss can be
+read rather than guessed at.
+
+## The kill criterion
+
+**If creators replace more than 30% of the generated timeline, across three
+archives, the sequencing is not earning its keep.**
+
+`timeline_churn(original, edited)` measures this mechanically from two EDLs —
+the one the planner produced and the one the creator saved out of the editor.
+
+```python
+report = timeline_churn(
+    load_edl("output/escalation.json"), load_edl("study/run-01/escalation.edited.json")
+)
+report["churn"]  # 0.0 – 1.0
+report["passes_kill_criterion"]  # churn <= MAX_CHURN (0.30)
+```
+
+How it is computed:
+
+- Clips are compared by `segment_id`, not by position.
+- `removed` = segment ids in the original but not the edit.
+- `added` = segment ids in the edit but not the original.
+- `churn = (removed + added) / (original_clips + added)`. Additions are in the
+  denominator too, so replacing five clips in a twenty-clip timeline reads as
+  10/25 = 0.40 rather than 10/20 = 0.50 — a replacement is charged once as a
+  removal and once as an addition, against the size of the union.
+- `reordered` counts positional disagreement **only among clips that survived
+  the edit**, so a removal is not double-charged as a reorder of everything
+  after it. It is reported for diagnosis; it does not enter the churn figure.
+- Pure reordering therefore yields `churn == 0.0` with a non-zero `reordered`
+  count. That is deliberate: if creators keep every clip and only move them,
+  the retrieval is right and the *ordering* is what needs work — which is a
+  different failure from the one the kill criterion is watching for.
+
+## Reading the result honestly
+
+Three things about this study that its own design does not fix:
+
+- **One archive is not three.** The kill criterion is explicitly cross-archive.
+  A good result on Groucho alone proves considerably less than it appears to.
+- **`can_open`, `can_end` and `energy` are model judgements** on a domain the
+  model has no ground truth for. If the AI cuts lose the blind test,
+  disagreement between those labels and human judgement is the prime suspect
+  before the objective itself.
+- **The weights are hand-set priors.** They are the hypothesis under test, not
+  a tuned result. The eight-term breakdown in every EDL is what makes retuning
+  tractable after a bad run — see
+  [`docs/decisions.md`](decisions.md#5-eight-separate-scoring-terms-all-surfaced).

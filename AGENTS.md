@@ -1,18 +1,55 @@
 ## Shared Fleet Standard
 
-Also read and follow the shared fleet-level agent standard at `../AGENTS.md`. Treat this repository as owned product code: protect production stability, keep changes scoped, verify work, and record durable follow-up tasks when something remains incomplete or blocked.
+Also read and follow the shared fleet-level agent standard at `../AGENTS.md`.
+Treat this repository as owned product code: protect stability, keep changes
+scoped, verify work, and record durable follow-up tasks when something remains
+incomplete or blocked.
 
 ## Project
 
-- **Stack**: Python + uv + FFmpeg + Astro
-- **Local dev**: TBD
-- **Deploy**: TBD
+- **Stack**: Python 3.11+ (uv, typer, pydantic, httpx, numpy), FFmpeg, SQLite,
+  Astro + a React island for the editor.
+- **Local dev**:
+  ```bash
+  uv sync                      # add --extra transcribe for local whisper
+  uv run pytest -q
+  uv run ruff check . && uv run ruff format --check .
+  cd web && pnpm install && pnpm build
+  ```
+- **Deploy**: none. This is a local CLI plus a loopback-only editor server.
+  Nothing here is deployed to Cloudflare.
+
+## What this is
+
+A validation experiment before it is a product. The claim under test is that
+**structure-aware sequencing produces a meaningfully better mashup than
+retrieving relevant clips and joining them**. Two baselines (`semantic`,
+`random`) ship in the same code path as the three AI strategies specifically
+so the comparison stays honest. Read
+`openspec/changes/build-mashup-mvp/design.md` before changing the planner or
+the scoring terms.
+
+## Rules specific to this repo
+
+- **Only creator-owned or public-domain material.** `scripts/fetch_archive.py`
+  refuses `-nd` licences and writes `PROVENANCE.json`. Do not add a YouTube
+  downloader or bypass the licence gate.
+- **No generated content.** No synthesised dialogue, narration, or footage.
+  Every frame of output comes from an existing clip. This is a product
+  boundary, not a technical limitation.
+- **Model access goes through the fleet free-ai gateway.** No provider keys
+  belong in this repo. See `config.py` for the env contract.
+- **Expensive stages must stay resumable.** Transcription, enrichment, and
+  embedding each cost real time and money; the gateway keeps an on-disk cache
+  and the store keeps stage output. Do not add a code path that redoes them.
+- **Scoring terms stay separate and surfaced.** Each of the eight terms is
+  independently testable and lands in the EDL with its weight. Do not collapse
+  them into an opaque score.
+- **The `.mashup/` workdir and `archive/` are local state.** Both are ignored;
+  a real archive is ~1.5 GiB and must never be committed.
 
 ## Visual work
 
-For any visual surface, use the Fleet-local Impeccable skill and the shared
- where applicable. Before broad visual implementation,
-run ; keep  authoritative for product
-scope,  limited to design context, and  authoritative
-for visual tokens and components. Review  before
-shipping meaningful UI work.
+The editor in `web/` is an operational tool: dense, scannable, accessible,
+fast. It is not a marketing surface, so `../LANDING_STANDARD.md` and the
+Impeccable workflow do not apply to it.
