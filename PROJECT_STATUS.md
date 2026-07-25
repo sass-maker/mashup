@@ -34,7 +34,8 @@ content domain at a time (comedy is the target).
 - FFmpeg — `ffmpeg` and `ffprobe` on `PATH`. Burn-in subtitles additionally
   need a libass-enabled build.
 - Runtime packages: httpx, numpy, pydantic, python-dotenv, rich, tenacity, typer.
-- Optional `transcribe` extra: mlx-whisper (Apple silicon only).
+- Optional transcription: installed `whisperkit-cli` with a local CoreML model
+  (preferred) or the `transcribe` extra with mlx-whisper (Apple silicon only).
 - archive.org — source of the public-domain dev corpus (`ybylcollection`).
 - Editor UI: Node 22 + pnpm, Astro 5 + a React 19 island (`web/`).
 
@@ -53,8 +54,11 @@ content domain at a time (comedy is the target).
 - 2026-07-25 — Astro + React transcript editor built under `web/`.
 - 2026-07-25 — six capability specs, README and learning docs written.
 - 2026-07-25 — verified the three validation CLI surfaces
-  (`experiment`, `evaluate`, `churn`), all 175 Python tests, Ruff, the Astro
+  (`experiment`, `evaluate`, `churn`), all 178 Python tests, Ruff, the Astro
   editor build, and strict OpenSpec validation.
+- 2026-07-25 — added an optional WhisperKit CLI backend for faster local
+  transcription, retained mlx-whisper fallback, stripped Whisper control
+  tokens before segmentation, and added direct backend/atomic-output tests.
 - Next — run the pipeline end to end against the real Groucho archive, exercise
   the editor against its real media, then run the blind comparison.
 
@@ -77,7 +81,7 @@ content domain at a time (comedy is the target).
   `ffprobe` media probe that does not mistake cover art for video; forgiving
   SRT/VTT parsing (ASS overrides, karaoke timestamps, markup, entities, speaker
   extraction) where one bad block never costs an episode; resumable local
-  whisper transcription behind an optional extra.
+  WhisperKit CLI transcription with mlx-whisper fallback.
 - **Segmentation** — deterministic pause/speaker atoms, then greedy grouping
   toward a target segment length that closes at the longest nearby pause and
   prefers atoms opening a new thought.
@@ -112,7 +116,7 @@ content domain at a time (comedy is the target).
 - **Validation harness** — five-condition blind generation with a seeded label
   shuffle and a separately withheld `KEY.json`; rating sheet; unblinded
   criteria analysis; mechanical `timeline_churn` against the kill criterion.
-- **Verification** — 175 unit tests across subtitles, gateway, enrichment,
+- **Verification** — 178 unit tests across subtitles, transcription, gateway, enrichment,
   splitter, scoring, planning, boundaries, EDL I/O, editor server and the
   fetcher, plus an ffmpeg-gated render smoke test.
 

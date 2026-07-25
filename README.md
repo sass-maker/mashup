@@ -29,10 +29,14 @@ Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), and FFmpeg
 ```bash
 uv sync                        # runtime + dev deps
 uv sync --extra transcribe     # adds mlx-whisper (Apple silicon only)
+# Optional faster path: brew install whisperkit-cli
 ```
 
-The `transcribe` extra is only needed when your archive ships without
-subtitles. Nothing else in the pipeline imports it.
+When an archive has no subtitles, `auto` prefers an installed
+`whisperkit-cli` and otherwise falls back to the optional mlx-whisper extra.
+Set `MASHUP_WHISPERKIT_MODEL` to an existing local CoreML model directory to
+pin the WhisperKit model explicitly. Nothing else in the pipeline loads either
+backend.
 
 ## Configuration
 
@@ -43,6 +47,7 @@ environment or a `.env` file.
 | Variable | Default | Purpose |
 |---|---|---|
 | `MASHUP_GATEWAY_API_KEY` | — | Gateway key. Required by `enrich`, `embed` and `build`. `GATEWAY_API_KEY` is accepted as an alias. |
+| `MASHUP_WHISPERKIT_MODEL` | — | Optional existing CoreML model directory for `whisperkit-cli`. |
 | `MASHUP_GATEWAY_URL` | `https://ai-gateway.sassmaker.com` | Gateway base URL. |
 | `MASHUP_PROJECT_ID` | `mashup` | Sent on every `/v1` call. |
 | `MASHUP_CHAT_MODEL` | `auto` | Chat model for brief parsing and enrichment. |

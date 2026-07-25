@@ -8,7 +8,8 @@ incomplete or blocked.
 ## Project
 
 - **Stack**: Python 3.11+ (uv, typer, pydantic, httpx, numpy), FFmpeg, SQLite,
-  Astro + a React island for the editor.
+  optional whisperkit-cli or mlx-whisper transcription, Astro + a React island
+  for the editor.
 - **Local dev**:
   ```bash
   uv sync                      # add --extra transcribe for local whisper
