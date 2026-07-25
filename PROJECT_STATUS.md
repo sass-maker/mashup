@@ -55,8 +55,8 @@ content domain at a time (comedy is the target).
 - 2026-07-25 — verified the three validation CLI surfaces
   (`experiment`, `evaluate`, `churn`), all 175 Python tests, Ruff, the Astro
   editor build, and strict OpenSpec validation.
-- Next — wire the experiment CLI, run the pipeline end to end against the real
-  Groucho archive, then run the blind comparison.
+- Next — run the pipeline end to end against the real Groucho archive, exercise
+  the editor against its real media, then run the blind comparison.
 
 ## Products
 
@@ -151,4 +151,4 @@ content domain at a time (comedy is the target).
     Nothing has been fetched; `archive/` is gitignored and empty.
 10. **Gateway API key awaits the owner.** `MASHUP_GATEWAY_API_KEY` is unset, so
     `enrich`, `embed` and `build` have never been executed against the live
-    gateway. Items 4 and 5 are blocked behind both of these.
+    gateway. Planned items 2 and 3 are blocked behind both of these.
