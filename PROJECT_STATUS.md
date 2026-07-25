@@ -132,13 +132,19 @@ content domain at a time (comedy is the target).
 
 ### Planned
 
-2. Run the planning stages against the prepared archive. Ingestion is done and
-   verified on real material (see Corpus below); `enrich`, `embed` and `build`
-   have still never run against the live gateway.
-3. Recruit five viewers, run the blind comparison, record the result against
-   the success and kill criteria in `docs/experiment.md`.
+2. **Recruit five viewers and run the blind comparison.** The blind set is
+   generated and rendered in `experiment/` (A–E plus a withheld `KEY.json`
+   and a `ratings.csv` template). This is the only step that can actually
+   validate the thesis; everything below is a proxy for it.
+3. **Fix the callback strategy.** It scores 0.06 on its own objective while
+   chronological scores 0.25 by accident (see First run below). Either the
+   entity-overlap signal is too sparse on this archive, or the planner is
+   not weighting it hard enough to overcome duration and relevance pressure.
 4. Cross-archive validation. The kill criterion is explicitly cross-archive; a
    good Groucho result proves considerably less than it appears to.
+5. `chronological` finished 100s under a 420s target because the ordering
+   constraint exhausts valid candidates. Either widen the retrieval pool for
+   that strategy or let it relax the constraint rather than run short.
 
 ### Deferred / open questions
 
@@ -153,10 +159,59 @@ content domain at a time (comedy is the target).
 
 ### Blocked
 
-9. **Gateway API key awaits the owner.** `MASHUP_GATEWAY_API_KEY` is unset and
-    `infisical` needs an interactive `infisical login`, so `enrich`, `embed`
-    and `build` have never been executed against the live gateway. Planned
-    items 1, 2 and 3 are all blocked behind this.
+Nothing. The full pipeline has run end to end against the live gateway.
+
+## First run (2026-07-25)
+
+Prompt: *"A seven-minute set about marriage and money. Start with how couples
+met, build into arguments about money, and finish with the best marriage
+jokes."* The brief parsed into three ordered beats correctly.
+
+All five conditions planned and rendered to MP4. Because each strategy is
+scored under its own weight profile, the per-strategy totals are **not**
+comparable; scoring every sequence under one common objective is:
+
+| scored under | escalation obj. | callback obj. |
+|---|---|---|
+| escalation | **0.760** | 0.677 |
+| callback | 0.741 | 0.674 |
+| chronological | 0.737 | **0.679** |
+| semantic (baseline) | 0.692 | 0.604 |
+| random (control) | 0.683 | 0.587 |
+
+Per-term, the separation is where the design predicted it would be:
+
+| | context_completeness | progression |
+|---|---|---|
+| AI cuts | 0.95 – 1.00 | 0.68 – 0.89 |
+| semantic | 0.80 | 0.58 |
+| random | 0.68 | 0.60 |
+
+**This is the machine grading its own homework and must not be read as
+validation.** The planner optimises this objective, so beating the baselines
+on it is close to tautological. It establishes only that the machinery works
+end to end and that the strategies are genuinely differentiated. The blind
+five-viewer comparison is the actual test.
+
+Two honest negatives: the callback strategy scores 0.06 on callback while
+chronological scores 0.25 incidentally, and chronological ran 100s short of
+target.
+
+Render verified: 6:50 output, valid h264/AAC, rebased sidecar SRT, and
+loudness at three points drawn from different source episodes measuring
+-15.6, -16.5 and -16.0 LUFS against a -16 target.
+
+## Operational notes
+
+- The gateway falls back between embedding providers under sustained load.
+  `gemini-embedding-001` (3072d) cannot serve 727 segments; the run is pinned
+  to `@cf/baai/bge-large-en-v1.5` (1024d) via `MASHUP_EMBED_MODEL`. Mixing is
+  now rejected rather than silently corrupting retrieval.
+- Enrichment needed four passes to drain: batches fail on gateway routing
+  errors, and each pass retries only what is still missing, hitting the disk
+  cache for everything already done.
+- Run everything under `infisical run --silent --command '...'` with
+  `MASHUP_GATEWAY_API_KEY="$Free_ai"`.
 
 ## Corpus (prepared 2026-07-25)
 
