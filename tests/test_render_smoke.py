@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -179,3 +180,13 @@ def test_missing_source_lists_every_offender(tmp_path):
         render(edl, tmp_path / "out.mp4", workdir=tmp_path / "work")
     assert "gone-a.mp4" in str(excinfo.value)
     assert "gone-b.mp4" in str(excinfo.value)
+
+
+def test_render_accepts_a_relative_output_path(media, tmp_path, monkeypatch):
+    """ffmpeg runs with cwd=workdir, so a relative output path used to resolve
+    against the workdir instead of the caller's directory and fail outright."""
+    monkeypatch.chdir(tmp_path)
+    edl = make_edl((media / "a.mp4", 0.2, 1.4))
+    out = render(edl, Path("elsewhere/out.mp4"), workdir=tmp_path / "work", subtitles="none")
+    assert (tmp_path / "elsewhere" / "out.mp4").is_file()
+    assert out.is_absolute(), "the returned path should be unambiguous"

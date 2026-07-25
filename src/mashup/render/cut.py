@@ -323,6 +323,11 @@ def render(
     say: Progress = progress or (lambda _msg: None)
     if not edl.clips:
         raise ValueError("cannot render an EDL with no clips")
+    # ffmpeg is invoked with cwd=workdir so the concat list can use relative
+    # entries, which means a relative output path would resolve against the
+    # workdir rather than the caller's directory. Pin it before anything runs.
+    out_path = Path(out_path).resolve()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     if subtitles == "burn" and not has_subtitles_filter():
         raise ToolError(
             "this ffmpeg build has no `subtitles` filter (it needs libass), so "

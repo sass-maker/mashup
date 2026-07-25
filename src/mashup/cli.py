@@ -30,8 +30,20 @@ WORKDIR_OPT = Annotated[
 
 
 def _progress(label: str):
+    """Counter-style progress, for the staged pipeline commands."""
+
     def cb(done: int, total: int) -> None:
         err.print(f"  {label}: {done}/{total}", end="\r")
+
+    return cb
+
+
+def _status(label: str):
+    """Message-style progress. `render()` reports status strings, not counts —
+    passing the counter callback to it raises a TypeError deep in the render."""
+
+    def cb(message: str) -> None:
+        err.print(f"  {label}: {message}")
 
     return cb
 
@@ -162,7 +174,7 @@ def build(
                 crossfade=crossfade,
                 subtitles=subtitles,
                 workdir=cfg.workdir,
-                progress=_progress(edl.strategy),
+                progress=_status(edl.strategy),
             )
             console.print(f"  -> {out}")
     console.print(f"\n[green]Wrote {len(edls)} variants to {output}[/green]")
@@ -191,7 +203,7 @@ def render_cmd(
         crossfade=crossfade,
         subtitles=subtitles,
         workdir=cfg.workdir,
-        progress=_progress("render"),
+        progress=_status("render"),
     )
     console.print(f"[green]{output}[/green]")
 
@@ -248,7 +260,7 @@ def experiment(
                 out,
                 subtitles=subtitles,
                 workdir=cfg.workdir,
-                progress=_progress(blind.label),
+                progress=_status(blind.label),
             )
     console.print(
         f"\n[green]Wrote 5 blind variants to {output}[/green]\n"
@@ -333,7 +345,7 @@ def main(
         _summarise(edl)
         save_edl(edl, output / f"{edl.strategy}.json")
         out = output / f"{edl.strategy}.mp4"
-        render(edl, out, workdir=cfg.workdir, progress=_progress(edl.strategy))
+        render(edl, out, workdir=cfg.workdir, progress=_status(edl.strategy))
         console.print(f"  -> {out}")
 
 
