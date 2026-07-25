@@ -132,9 +132,9 @@ content domain at a time (comedy is the target).
 
 ### Planned
 
-2. Run the pipeline end to end against a real archive with real transcripts —
-   this has never happened. Everything shipped so far is verified by unit tests
-   and synthetic fixtures only.
+2. Run the planning stages against the prepared archive. Ingestion is done and
+   verified on real material (see Corpus below); `enrich`, `embed` and `build`
+   have still never run against the live gateway.
 3. Recruit five viewers, run the blind comparison, record the result against
    the success and kill criteria in `docs/experiment.md`.
 4. Cross-archive validation. The kill criterion is explicitly cross-archive; a
@@ -153,8 +153,32 @@ content domain at a time (comedy is the target).
 
 ### Blocked
 
-9. **Bulk archive download (~1.5 GiB for 20 of 42 episodes) awaits the owner.**
-    Nothing has been fetched; `archive/` is gitignored and empty.
-10. **Gateway API key awaits the owner.** `MASHUP_GATEWAY_API_KEY` is unset, so
-    `enrich`, `embed` and `build` have never been executed against the live
-    gateway. Planned items 2 and 3 are blocked behind both of these.
+9. **Gateway API key awaits the owner.** `MASHUP_GATEWAY_API_KEY` is unset and
+    `infisical` needs an interactive `infisical login`, so `enrich`, `embed`
+    and `build` have never been executed against the live gateway. Planned
+    items 1, 2 and 3 are all blocked behind this.
+
+## Corpus (prepared 2026-07-25)
+
+20 episodes of *You Bet Your Life* fetched from archive.org `ybylcollection`
+(Public Domain Mark 1.0, provenance and per-file md5s in
+`archive/PROVENANCE.json`). `archive/` and `.mashup/` are gitignored.
+
+| Measure | Value |
+|---|---|
+| Media | 9.1 hours, 472x360 h264 + AAC |
+| Cues | 10,969 (all transcribed locally; the archive ships no subtitles) |
+| Segments | 727, covering 7.8 hours (86% — the rest is music and applause) |
+| Segment length | mean 38s, p10 24s, p90 52s |
+| Speech density | median 2.72 words/sec, min 0.62 |
+| Duplicate openings | 3.3%, all genuine cross-episode show boilerplate |
+
+Transcription runs via `whisperkit-cli` against the CoreML large-v3-turbo
+model already on this machine, at roughly 24x realtime. Set
+`MASHUP_WHISPERKIT_MODEL` to the model directory before `mashup ingest`.
+
+Two transcription defects were found and fixed while preparing this corpus:
+WhisperKit's VAD chunking re-emitted whole decoded windows (49% duplicate
+cues), and Whisper hallucinated a stock "Thank you." over non-speech audio
+(14% of segments). Both would have fed noise directly into the
+`non_repetition` scoring term.
