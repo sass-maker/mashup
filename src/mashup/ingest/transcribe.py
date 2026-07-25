@@ -1,27 +1,43 @@
 """Local subtitle generation for archives that ship without SRT/VTT.
 
-mlx-whisper is an optional Apple-silicon extra, so it is imported inside the
-function: nothing else in the pipeline should fail to import on a machine that
-will never transcribe.
+Two backends, both optional and both imported/resolved lazily so nothing else
+in the pipeline fails to load on a machine that will never transcribe:
+
+- `whisperkit` — the `whisperkit-cli` binary (`brew install whisperkit-cli`),
+  running Apple's CoreML Whisper builds on the Neural Engine. Roughly 16x
+  realtime warm on an M-series, and it emits SRT directly.
+- `mlx` — the `mlx-whisper` Python extra (`uv sync --extra transcribe`).
+
+`auto` prefers whisperkit when the binary is present, because it is the faster
+of the two and needs no Python dependency.
 """
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 DEFAULT_MODEL = "mlx-community/whisper-small.en-mlx"
 # Whisper's own front end resamples to 16 kHz mono; doing it in ffmpeg keeps the
 # temp file small and avoids handing whisper a video container to demux.
 SAMPLE_RATE = 16000
 
+Backend = Literal["auto", "whisperkit", "mlx"]
+
+# A local CoreML model directory for whisperkit-cli. Without one the CLI would
+# download a model; pointing at an existing directory keeps transcription
+# offline and lets the caller choose the variant.
+WHISPERKIT_MODEL_ENV = "MASHUP_WHISPERKIT_MODEL"
+
 _MISSING_EXTRA = (
-    "mlx_whisper is not installed. Install the optional extra with:\n"
-    "  uv sync --extra transcribe\n"
-    "(Apple silicon only. Otherwise place a sibling .srt/.vtt next to the media file.)"
+    "No transcription backend available.\n"
+    "  brew install whisperkit-cli        (fastest; Apple silicon)\n"
+    "  uv sync --extra transcribe         (mlx-whisper)\n"
+    "Otherwise place a sibling .srt/.vtt next to the media file."
 )
 
 
@@ -29,7 +45,21 @@ class TranscribeError(RuntimeError):
     """Raised when transcription cannot run or produce an SRT."""
 
 
-def transcribe(media: Path, out_srt: Path, model: str = DEFAULT_MODEL) -> Path:
+def _resolve_backend(backend: Backend) -> str:
+    if backend != "auto":
+        return backend
+    return "whisperkit" if shutil.which("whisperkit-cli") else "mlx"
+
+
+def transcribe(
+    media: Path,
+    out_srt: Path,
+    model: str = DEFAULT_MODEL,
+    *,
+    backend: Backend = "auto",
+    whisperkit_model: str | None = None,
+    language: str = "en",
+) -> Path:
     """Transcribe `media` to `out_srt`, returning the SRT path.
 
     Transcription is the slowest step in the pipeline by an order of magnitude,
@@ -40,6 +70,58 @@ def transcribe(media: Path, out_srt: Path, model: str = DEFAULT_MODEL) -> Path:
     if not media.is_file():
         raise TranscribeError(f"Media file not found: {media}")
 
+    out_srt.parent.mkdir(parents=True, exist_ok=True)
+    resolved = _resolve_backend(backend)
+    if resolved == "whisperkit":
+        text = _transcribe_whisperkit(media, whisperkit_model, language)
+    else:
+        text = _transcribe_mlx(media, model)
+
+    # Write via a sibling temp file: a half-written SRT left by a crash would be
+    # silently trusted by the resume check above.
+    staging = out_srt.with_suffix(out_srt.suffix + ".partial")
+    staging.write_text(text, encoding="utf-8")
+    staging.replace(out_srt)
+    return out_srt
+
+
+def _transcribe_whisperkit(media: Path, model_dir: str | None, language: str) -> str:
+    if shutil.which("whisperkit-cli") is None:
+        raise TranscribeError(_MISSING_EXTRA)
+    model_dir = model_dir or os.getenv(WHISPERKIT_MODEL_ENV) or ""
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmpdir = Path(tmp)
+        wav = tmpdir / "audio.wav"
+        _extract_audio(media, wav)
+        cmd = [
+            "whisperkit-cli",
+            "transcribe",
+            "--audio-path",
+            str(wav),
+            "--language",
+            language,
+            # VAD chunking keeps long recordings from looping on repeated
+            # phrases, which vintage broadcast audio provokes readily.
+            "--chunking-strategy",
+            "vad",
+            "--report",
+            "--report-path",
+            str(tmpdir),
+        ]
+        if model_dir:
+            cmd += ["--model-path", str(Path(model_dir).expanduser())]
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if proc.returncode != 0:
+            raise TranscribeError(f"whisperkit-cli failed on {media}: {proc.stderr.strip()[-500:]}")
+        srt = wav.with_suffix(".srt")
+        if not srt.is_file():
+            raise TranscribeError(f"whisperkit-cli produced no SRT for {media}")
+        # Whisper special tokens are stripped downstream by the subtitle parser.
+        return srt.read_text(encoding="utf-8")
+
+
+def _transcribe_mlx(media: Path, model: str) -> str:
     try:
         import mlx_whisper  # noqa: PLC0415 — optional extra, see module docstring
     except ImportError as exc:
@@ -59,14 +141,7 @@ def transcribe(media: Path, out_srt: Path, model: str = DEFAULT_MODEL) -> Path:
     segments = result.get("segments") or []
     if not segments:
         raise TranscribeError(f"Transcription produced no segments for {media}")
-
-    out_srt.parent.mkdir(parents=True, exist_ok=True)
-    # Write via a sibling temp file: a half-written SRT left by a crash would be
-    # silently trusted by the resume check above.
-    staging = out_srt.with_suffix(out_srt.suffix + ".partial")
-    staging.write_text(_to_srt(segments), encoding="utf-8")
-    staging.replace(out_srt)
-    return out_srt
+    return _to_srt(segments)
 
 
 def _extract_audio(media: Path, wav: Path) -> None:

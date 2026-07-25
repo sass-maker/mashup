@@ -30,6 +30,11 @@ _INDEX = re.compile(r"^\d+$")
 _ASS_OVERRIDE = re.compile(r"\{\\[^}]*\}")
 # VTT karaoke cues interleave `<00:00:01.000>` between words.
 _INLINE_TIMESTAMP = re.compile(r"<\d{1,3}:\d{2}(?::\d{2})?[.,]\d{1,3}>")
+# Whisper special tokens. WhisperKit writes these straight into its SRT:
+# `<|startoftranscript|><|en|><|transcribe|><|0.00|> text <|4.00|>`. They are
+# not markup — `_TAG` requires a letter after `<` and skips them — so without
+# this they reach the segment text, the embeddings, and the enrichment prompt.
+_WHISPER_TOKEN = re.compile(r"<\|[^|>]*\|>")
 # Any real tag: <i>, </b>, <font color="#fff">, <c.loud>, <v Name>.
 _TAG = re.compile(r"</?[A-Za-z][^>]*>")
 _VOICE = re.compile(r"<v(?:\.[^\s>]+)*[\s.]+([^>]+)>")
@@ -158,6 +163,7 @@ def _clean(raw: str) -> tuple[str, str | None]:
     # `<v Name>` may carry classes and trailing annotations: `<v.loud Bob Loud>`.
     speaker = voice.group(1).strip() or None if voice else None
     text = _INLINE_TIMESTAMP.sub("", text)
+    text = _WHISPER_TOKEN.sub("", text)
     text = _TAG.sub("", text)
     # Unescape last so `&lt;i&gt;` survives as literal text rather than a tag.
     text = html.unescape(text)

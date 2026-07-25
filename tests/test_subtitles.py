@@ -239,3 +239,26 @@ def test_header_only_vtt_raises(tmp_path: Path) -> None:
 def test_unsupported_suffix_raises(tmp_path: Path) -> None:
     with pytest.raises(SubtitleError):
         parse_subtitles(write(tmp_path, "subs.ass", "whatever"))
+
+
+def test_whisper_special_tokens_are_stripped(tmp_path: Path) -> None:
+    """WhisperKit writes raw whisper tokens into its SRT output.
+
+    These are not markup, so the generic tag regex skips them. Left in, they
+    reach segment text, embeddings and the enrichment prompt.
+    """
+    content = (
+        "1\n"
+        "00:00:00,000 --> 00:00:04,000\n"
+        "<|startoftranscript|><|en|><|transcribe|><|0.00|> "
+        "I play the part of Peter Minuet.<|4.00|>\n\n"
+        "2\n"
+        "00:00:04,000 --> 00:00:07,000\n"
+        "<|4.00|> And if you rush to your nearest theater.<|7.00|>\n"
+    )
+    cues = parse_subtitles(write(tmp_path, "wk.srt", content))
+    assert [c.text for c in cues] == [
+        "I play the part of Peter Minuet.",
+        "And if you rush to your nearest theater.",
+    ]
+    assert not any("<|" in c.text for c in cues)
