@@ -77,7 +77,10 @@ def test_short_tail_folds_into_previous_group():
 
 
 def test_split_source_produces_contiguous_non_overlapping_segments():
-    cues = make_cues([(float(i) * 8, float(i) * 8 + 7.5, f"line {i}") for i in range(30)])
+    # Realistic speech density (~2 words/sec); a sparser fixture would be
+    # discarded by the non-speech filter.
+    line = "and then he told me the funniest thing i had ever heard in my whole life"
+    cues = make_cues([(float(i) * 8, float(i) * 8 + 7.5, f"{line} {i}") for i in range(30)])
     segments = split_source("ep01", cues)
     assert segments
     assert all(s.id.startswith("ep01:") for s in segments)
@@ -88,3 +91,35 @@ def test_split_source_produces_contiguous_non_overlapping_segments():
 
 def test_split_source_handles_empty_input():
     assert split_source("ep01", []) == []
+
+
+def test_non_speech_artefacts_are_dropped():
+    """Whisper emits a stock phrase over music/applause; 30s of "Thank you."
+    is not content and must not reach the planner."""
+    from mashup.segment.splitter import drop_non_speech, speech_density
+    from conftest import make_segment
+
+    junk = make_segment("junk", duration=30.0, text="Thank you.")
+    real = make_segment("real", duration=30.0, text=" ".join(["word"] * 75))
+    assert speech_density(junk) < 0.5
+    assert speech_density(real) > 2.0
+    assert [s.id for s in drop_non_speech([junk, real])] == ["real"]
+
+
+def test_filter_keeps_sparse_but_genuine_speech():
+    """A slow segment that still carries real dialogue must survive."""
+    from mashup.segment.splitter import drop_non_speech
+    from conftest import make_segment
+
+    sparse = make_segment("sparse", duration=30.0, text=" ".join(["word"] * 20))
+    assert [s.id for s in drop_non_speech([sparse])] == ["sparse"]
+
+
+def test_segment_ids_are_stable_under_filtering():
+    """Ordinals are assigned before filtering, so ids do not shift when the
+    threshold is retuned."""
+    cues = make_cues([(float(i) * 8, float(i) * 8 + 7.5, f"line {i} here now") for i in range(30)])
+    kept = split_source("ep01", cues, filter_non_speech=True)
+    unfiltered = split_source("ep01", cues, filter_non_speech=False)
+    kept_ids = {s.id for s in kept}
+    assert kept_ids <= {s.id for s in unfiltered}

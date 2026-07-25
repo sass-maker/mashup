@@ -31,6 +31,13 @@ DEFAULT_MAX_ATOM = 30.0
 DEFAULT_MIN_SEGMENT = 20.0
 DEFAULT_TARGET_SEGMENT = 55.0
 DEFAULT_MAX_SEGMENT = 120.0
+# Conversational speech runs 2-3 words/second. Anything below this is a
+# transcriber artefact over non-speech audio, not quiet dialogue. See
+# `drop_non_speech`.
+MIN_WORDS_PER_SECOND = 0.5
+
+# Digits count: "I bet you 25 dollars" is five spoken words.
+_WORD = re.compile(r"[A-Za-z']+|\d+")
 
 # Phrases that typically open a new thought. Used only as a tiebreaker when
 # choosing where to split an over-long run of atoms.
@@ -199,6 +206,26 @@ def segments_from_groups(source_id: str, groups: list[list[Atom]]) -> list[Segme
     return segments
 
 
+def speech_density(segment: Segment) -> float:
+    """Words per second of wall-clock time."""
+    words = len(_WORD.findall(segment.text))
+    return words / segment.duration if segment.duration > 0 else 0.0
+
+
+def drop_non_speech(segments: list[Segment]) -> list[Segment]:
+    """Remove segments that are transcription artefacts rather than content.
+
+    Whisper emits a short stock phrase — most often "Thank you." — for a
+    30-second window of music, applause, or silence. Measured on the dev
+    archive these are 14% of all segments and the split is unambiguous:
+    real speech sits at 1.9-3.3 words/second while the artefacts sit at 0.07.
+
+    Left in, they waste an enrichment call each, pollute retrieval, and can
+    be planned into a mashup as half a minute of dead air.
+    """
+    return [s for s in segments if speech_density(s) >= MIN_WORDS_PER_SECOND]
+
+
 def split_source(
     source_id: str,
     cues: list[Cue],
@@ -207,6 +234,7 @@ def split_source(
     min_segment: float = DEFAULT_MIN_SEGMENT,
     target_segment: float = DEFAULT_TARGET_SEGMENT,
     max_segment: float = DEFAULT_MAX_SEGMENT,
+    filter_non_speech: bool = True,
 ) -> list[Segment]:
     """Deterministic cues -> segments for one source."""
     atoms = build_atoms(cues, pause_gap=pause_gap)
@@ -216,4 +244,7 @@ def split_source(
         target_segment=target_segment,
         max_segment=max_segment,
     )
-    return segments_from_groups(source_id, groups)
+    segments = segments_from_groups(source_id, groups)
+    # Filtering after numbering leaves gaps in the ordinals, which is
+    # deliberate: segment ids then stay stable if the threshold is retuned.
+    return drop_non_speech(segments) if filter_non_speech else segments
