@@ -8,10 +8,9 @@ The comparison is blind and the churn measurement is mechanical, both on
 purpose — they live in `src/mashup/experiment.py` rather than in a spreadsheet
 someone fills in by hand.
 
-> **Status:** the harness is written and unit-tested. It has never been run
-> against a real archive, and there are no `mashup experiment` / `mashup churn`
-> CLI commands yet — today the functions are importable only. See
-> [`PROJECT_STATUS.md`](../PROJECT_STATUS.md).
+> **Status:** the harness and its `mashup experiment`, `mashup evaluate`, and
+> `mashup churn` commands are written and unit-tested. It has not yet been run
+> against a real archive. See [`PROJECT_STATUS.md`](../PROJECT_STATUS.md).
 
 ## The five conditions
 
@@ -32,19 +31,17 @@ missing condition rather than quietly comparing four.
 
 ## Running it
 
-```python
-from pathlib import Path
-from mashup.config import load_config
-from mashup.experiment import run_experiment, summarise_ratings, timeline_churn
+```bash
+uv run mashup experiment \
+  --prompt "seven minutes on airline travel" \
+  --duration 420 \
+  --output study/run-01
 
-cfg = load_config()
-blinds = run_experiment(
-    "seven minutes on airline travel",
-    cfg,
-    outdir=Path("study/run-01"),
-    target=420.0,
-    seed=0,
-)
+# After five viewers complete study/run-01/ratings.csv:
+uv run mashup evaluate study/run-01
+
+# Compare a generated timeline with the creator's edited version:
+uv run mashup churn output/escalation.json study/run-01/escalation.edited.json
 ```
 
 The archive must already be ingested, enriched and embedded — see the

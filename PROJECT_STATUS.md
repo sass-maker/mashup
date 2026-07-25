@@ -52,6 +52,9 @@ content domain at a time (comedy is the target).
   harness. 162 unit tests passing.
 - 2026-07-25 — Astro + React transcript editor built under `web/`.
 - 2026-07-25 — six capability specs, README and learning docs written.
+- 2026-07-25 — verified the three validation CLI surfaces
+  (`experiment`, `evaluate`, `churn`), all 175 Python tests, Ruff, the Astro
+  editor build, and strict OpenSpec validation.
 - Next — wire the experiment CLI, run the pipeline end to end against the real
   Groucho archive, then run the blind comparison.
 
@@ -109,7 +112,7 @@ content domain at a time (comedy is the target).
 - **Validation harness** — five-condition blind generation with a seeded label
   shuffle and a separately withheld `KEY.json`; rating sheet; unblinded
   criteria analysis; mechanical `timeline_churn` against the kill criterion.
-- **Verification** — 162 unit tests across subtitles, gateway, enrichment,
+- **Verification** — 175 unit tests across subtitles, gateway, enrichment,
   splitter, scoring, planning, boundaries, EDL I/O, editor server and the
   fetcher, plus an ffmpeg-gated render smoke test.
 
@@ -117,43 +120,35 @@ content domain at a time (comedy is the target).
 
 ### In progress
 
-1. **`mashup experiment` and `mashup churn` CLI commands.** `experiment.py`
-   implements `run_experiment`, `write_rating_sheet`, `summarise_ratings` and
-   `timeline_churn`, but nothing in `cli.py` exposes them — today they are
-   importable only.
-2. **Editor UI verification.** `web/` builds and `web/dist` exists, but the
+1. **Editor UI verification.** `web/` builds and `web/dist` exists, but the
    editor has only ever been driven against synthetic fixtures. It has not been
    exercised against a real EDL with real media.
-3. **`openspec/changes/build-mashup-mvp/tasks.md` is stale.** Section 5
-   (local server, Astro timeline, `mashup serve`) and the section 8 CI item are
-   still unchecked although all four have shipped. Reconcile before archiving
-   the change.
 
 ### Planned
 
-4. Run the pipeline end to end against a real archive with real transcripts —
+2. Run the pipeline end to end against a real archive with real transcripts —
    this has never happened. Everything shipped so far is verified by unit tests
    and synthetic fixtures only.
-5. Recruit five viewers, run the blind comparison, record the result against
+3. Recruit five viewers, run the blind comparison, record the result against
    the success and kill criteria in `docs/experiment.md`.
-6. Cross-archive validation. The kill criterion is explicitly cross-archive; a
+4. Cross-archive validation. The kill criterion is explicitly cross-archive; a
    good Groucho result proves considerably less than it appears to.
 
 ### Deferred / open questions
 
-7. `Source.recorded_at` is never populated; ordinals proxy chronology. Real
+5. `Source.recorded_at` is never populated; ordinals proxy chronology. Real
    creator archives may need a filename date convention parsed.
-8. `ingest_archive` raises on the first unreadable file. A real archive
+6. `ingest_archive` raises on the first unreadable file. A real archive
    probably wants to tolerate one bad file and report it.
-9. `Config.media_dir` (`.mashup/media`) is created by `ensure_dirs` but nothing
+7. `Config.media_dir` (`.mashup/media`) is created by `ensure_dirs` but nothing
    writes to it. Either give it a job or delete it.
-10. Scoring weights are hand-set priors, not learned. The experiment tests
+8. Scoring weights are hand-set priors, not learned. The experiment tests
     them; the EDL term breakdown is what makes retuning tractable.
 
 ### Blocked
 
-11. **Bulk archive download (~1.5 GiB for 20 of 42 episodes) awaits the owner.**
+9. **Bulk archive download (~1.5 GiB for 20 of 42 episodes) awaits the owner.**
     Nothing has been fetched; `archive/` is gitignored and empty.
-12. **Gateway API key awaits the owner.** `MASHUP_GATEWAY_API_KEY` is unset, so
+10. **Gateway API key awaits the owner.** `MASHUP_GATEWAY_API_KEY` is unset, so
     `enrich`, `embed` and `build` have never been executed against the live
     gateway. Items 4 and 5 are blocked behind both of these.
