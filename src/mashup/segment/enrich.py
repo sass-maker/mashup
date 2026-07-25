@@ -8,14 +8,17 @@ written around those rather than around tidy summaries.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from pydantic import ValidationError
 
-from mashup.gateway import Gateway
+from mashup.gateway import Gateway, GatewayError
 from mashup.models import Role, Segment, SegmentMeta
+
+logger = logging.getLogger(__name__)
 
 # Tunable in one place — this is the prompt the whole pipeline's quality rests on.
 SYSTEM_PROMPT = """You analyse a single comedian/podcaster's archive so that clips \
@@ -84,14 +87,30 @@ def enrich_segments(
     done = 0
     total = len(segments)
 
+    failed_batches = 0
     with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
         futures = {pool.submit(_enrich_batch, batch, gw, context): batch for batch in batches}
         for future in as_completed(futures):
-            results.update(future.result())
+            try:
+                results.update(future.result())
+            except GatewayError:
+                # One unroutable batch must not discard the whole archive. A
+                # 727-segment run died at 82% this way; the segments it did
+                # enrich were all lost. Those left without metadata keep the
+                # neutral default and are retried on the next `enrich`, which
+                # is cheap because completed batches are cached on disk.
+                failed_batches += 1
             done += len(futures[future])
             if progress is not None:
                 progress(done, total)
 
+    if failed_batches:
+        logger.warning(
+            "%d of %d enrichment batches failed; those segments keep default "
+            "metadata and will be retried on the next run",
+            failed_batches,
+            len(batches),
+        )
     return [seg.model_copy(update={"meta": results.get(seg.id, SegmentMeta())}) for seg in segments]
 
 

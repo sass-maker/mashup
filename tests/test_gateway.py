@@ -265,3 +265,45 @@ def test_parse_json_rejects_scalars() -> None:
         _parse_json("42")
     with pytest.raises(ValueError):
         _parse_json("   ")
+
+
+def test_auto_model_retries_gateway_routing_failure(tmp_path: Path) -> None:
+    """The gateway reports an unroutable upstream as a non-retriable 400.
+
+    With `model: "auto"` that describes the gateway's routing table, not our
+    request, and a retry lands on a different provider. Observed killing a
+    727-segment enrichment run at 82%.
+    """
+    calls: list[int] = []
+    body = (
+        '{"error":{"message":"All providers failed: 404 The model '
+        "`meta-llama/llama-4-scout-17b-16e-instruct` does not exist or you do "
+        'not have access to it.","type":"input_nonretriable"}}'
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        if len(calls) == 1:
+            return httpx.Response(400, text=body)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "recovered"}}]})
+
+    gw = make_gateway(tmp_path, handler)
+    assert gw.chat([{"role": "user", "content": "hi"}], model="auto") == "recovered"
+    assert len(calls) == 2
+
+
+def test_explicit_missing_model_is_not_retried(tmp_path: Path) -> None:
+    """An explicit model that does not exist is a caller error, not routing."""
+    calls: list[int] = []
+    body = (
+        '{"error":{"message":"The model `nope` does not exist or you do not have access to it."}}'
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(400, text=body)
+
+    gw = make_gateway(tmp_path, handler)
+    with pytest.raises(GatewayError):
+        gw.chat([{"role": "user", "content": "hi"}], model="nope")
+    assert len(calls) == 1

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from mashup.gateway import GatewayError
 from mashup.models import Role, Segment, SegmentMeta
 from mashup.segment.enrich import BATCH_SIZE, CONTEXT_CHARS, enrich_segments
 
@@ -184,3 +185,26 @@ def test_empty_input_makes_no_calls() -> None:
     gw = StubGateway(echo_good)
     assert enrich_segments([], gw) == []
     assert gw.calls == []
+
+
+def test_failed_batch_does_not_discard_the_run() -> None:
+    """One unroutable batch must not cost the whole archive.
+
+    A 727-segment run died at 82% this way and lost every enriched segment.
+    Failures now degrade to neutral metadata for that batch alone, so the rest
+    persists and the failures are retried on the next run.
+    """
+    segments = [make_segment(i) for i in range(10)]
+    calls: list[int] = []
+
+    class FlakyGateway:
+        def chat_json(self, messages, *, schema_hint, **kw):
+            calls.append(1)
+            if len(calls) == 1:
+                raise GatewayError("POST /v1/chat/completions failed", status_code=400)
+            return echo_good(messages)
+
+    out = enrich_segments(segments, FlakyGateway(), concurrency=1, batch_size=5)
+    summaries = [s.meta.summary for s in out]
+    assert summaries.count("") == 5, "exactly the failed batch keeps default metadata"
+    assert len(summaries) - summaries.count("") == 5, "the surviving batch is enriched"

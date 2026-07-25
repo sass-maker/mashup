@@ -32,6 +32,25 @@ from mashup.config import Config
 # Status codes worth retrying: rate limits and server-side faults. 400/401/403
 # are our fault and will fail identically forever.
 _RETRYABLE_STATUS = {408, 409, 429}
+
+# The gateway reports an unroutable upstream as a 400 tagged
+# `input_nonretriable`, e.g. "All providers failed: 404 The model
+# `meta-llama/...` does not exist". With `model: "auto"` that is a statement
+# about the gateway's routing table, not about our request — a retry lands on
+# a different provider. Observed killing a 727-segment enrichment run at 82%.
+_ROUTING_FAILURE = re.compile(
+    r"all providers failed|does not exist or you do not have access", re.IGNORECASE
+)
+
+
+def _is_routing_failure(status: int, text: str, body: dict[str, Any]) -> bool:
+    if status != 400 or not _ROUTING_FAILURE.search(text):
+        return False
+    # Only retry when we let the gateway choose. An explicit model that does
+    # not exist is a real caller error and must surface immediately.
+    return str(body.get("model", "")).lower() == "auto"
+
+
 _BODY_EXCERPT = 500
 
 JSONValue = dict[str, Any] | list[Any]
@@ -222,11 +241,12 @@ class Gateway:
         response = self._client.post(path, json=body)
         if response.status_code >= 400:
             text = response.text
-            cls = (
-                _TransientGatewayError
-                if response.status_code >= 500 or response.status_code in _RETRYABLE_STATUS
-                else GatewayError
+            transient = (
+                response.status_code >= 500
+                or response.status_code in _RETRYABLE_STATUS
+                or _is_routing_failure(response.status_code, text, body)
             )
+            cls = _TransientGatewayError if transient else GatewayError
             raise cls(f"POST {path} failed", status_code=response.status_code, body=text)
         try:
             return response.json()

@@ -47,16 +47,36 @@ def ingest(
         return store.counts()
 
 
+# Segments per store write during enrichment. Small enough that a crash costs
+# little, large enough that the write is not the bottleneck.
+ENRICH_CHECKPOINT = 50
+
+
 def enrich(cfg: Config, *, concurrency: int = 4, progress=None) -> dict[str, int]:
     with Store(cfg.db_path) as store:
         segments = store.get_segments(with_embeddings=False)
         todo = [s for s in segments if not s.meta.summary]
-        if todo:
-            gw = Gateway(cfg)
+        if not todo:
+            return store.counts()
+
+        gw = Gateway(cfg)
+        done = 0
+        # Checkpoint to the store as we go. Holding every result until the end
+        # meant one failed batch discarded the entire archive's work.
+        for i in range(0, len(todo), ENRICH_CHECKPOINT):
+            chunk = todo[i : i + ENRICH_CHECKPOINT]
+
+            def chunk_progress(c: int, _t: int, base: int = done) -> None:
+                if progress is not None:
+                    progress(base + c, len(todo))
+
             # enrich_segments returns copies rather than mutating in place, so
             # the return value is the only thing carrying the new metadata.
-            enriched = enrich_segments(todo, gw, concurrency=concurrency, progress=progress)
-            store.update_segment_meta(enriched)
+            enriched = enrich_segments(chunk, gw, concurrency=concurrency, progress=chunk_progress)
+            # Only persist segments that actually came back enriched, so a
+            # failed batch stays on the todo list for the next run.
+            store.update_segment_meta([s for s in enriched if s.meta.summary])
+            done += len(chunk)
         return store.counts()
 
 
