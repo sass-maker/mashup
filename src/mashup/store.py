@@ -193,6 +193,12 @@ class Store:
                 [(_to_blob(s.embedding), len(s.embedding), s.id) for s in segments if s.embedding],
             )
 
+    def clear_embeddings(self) -> None:
+        """Drop every vector. Needed when the serving embedding model changes,
+        because vectors from two models are not comparable."""
+        with self.conn:
+            self.conn.execute("UPDATE segments SET embedding = NULL, embedding_dim = NULL")
+
     def get_segments(self, *, with_embeddings: bool = True) -> list[Segment]:
         rows = self.conn.execute("SELECT * FROM segments ORDER BY source_id, start").fetchall()
         out: list[Segment] = []

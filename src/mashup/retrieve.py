@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 
 import numpy as np
@@ -46,6 +47,17 @@ def embed_segments(
 
 
 def _matrix(segments: list[Segment]) -> np.ndarray:
+    # Guard the mixed-vector-space case explicitly. The gateway can fall back
+    # between embedding providers mid-run, and numpy's own error for ragged
+    # input ("inhomogeneous shape") says nothing about the real cause.
+    dims = {len(s.embedding or ()) for s in segments}
+    if len(dims) > 1:
+        counts = Counter(len(s.embedding or ()) for s in segments)
+        raise ValueError(
+            f"segments carry embeddings of different dimensions ({dict(counts)}), so they "
+            "come from different models and are not comparable. Re-embed the corpus: "
+            "`mashup embed --reset`."
+        )
     mat = np.asarray([s.embedding for s in segments], dtype=np.float32)
     norms = np.linalg.norm(mat, axis=1, keepdims=True)
     return mat / np.clip(norms, 1e-8, None)

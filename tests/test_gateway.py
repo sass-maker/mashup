@@ -307,3 +307,51 @@ def test_explicit_missing_model_is_not_retried(tmp_path: Path) -> None:
     with pytest.raises(GatewayError):
         gw.chat([{"role": "user", "content": "hi"}], model="nope")
     assert len(calls) == 1
+
+
+def test_embedding_model_switch_is_retried_then_rejected(tmp_path: Path) -> None:
+    """The gateway falls back between embedding providers under load.
+
+    Vectors from two models are not comparable, and on a real 727-segment run
+    this produced 151 vectors at 3072 dims and 576 at 1024. Had the dimensions
+    matched it would have corrupted retrieval silently.
+    """
+    served = iter(["gemini-embedding-001", "@cf/baai/bge-large-en-v1.5", "gemini-embedding-001"])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        model = next(served)
+        n = len(json.loads(request.content)["input"])
+        dim = 3 if model.startswith("gemini") else 2
+        return httpx.Response(
+            200,
+            json={
+                "model": model,
+                "data": [{"index": i, "embedding": [0.1] * dim} for i in range(n)],
+            },
+        )
+
+    gw = make_gateway(tmp_path, handler)
+    # First call pins the space; the second is served by a fallback and must be
+    # retried rather than accepted, and the retry succeeds.
+    vectors = gw.embed(["a"], batch_size=1) + gw.embed(["b"], batch_size=1)
+    assert [len(v) for v in vectors] == [3, 3]
+    assert gw.embed_model_used == "gemini-embedding-001"
+
+
+def test_wrong_model_response_is_not_cached(tmp_path: Path) -> None:
+    """A rejected response must not poison the cache, or the retry would read
+    the same bad answer back forever."""
+    calls: list[str] = []
+    replies = iter(["bad-model", "gemini-embedding-001"])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        model = next(replies)
+        calls.append(model)
+        return httpx.Response(
+            200, json={"model": model, "data": [{"index": 0, "embedding": [0.1, 0.2]}]}
+        )
+
+    gw = make_gateway(tmp_path, handler, use_cache=True)
+    gw._embed_model_used = "gemini-embedding-001"
+    assert gw.embed(["x"], batch_size=1) == [[0.1, 0.2]]
+    assert calls == ["bad-model", "gemini-embedding-001"], "the bad reply was retried"

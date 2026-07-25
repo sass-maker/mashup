@@ -91,10 +91,16 @@ def enrich(
 
 
 @app.command()
-def embed(workdir: WORKDIR_OPT = None) -> None:
+def embed(
+    workdir: WORKDIR_OPT = None,
+    reset: Annotated[
+        bool,
+        typer.Option("--reset", help="Drop existing vectors first (use after a model change)"),
+    ] = False,
+) -> None:
     """Embed segments for retrieval."""
     cfg = _config(workdir)
-    counts = pipeline.embed(cfg, progress=_progress("embed"))
+    counts = pipeline.embed(cfg, progress=_progress("embed"), reset=reset)
     _show_counts(counts)
 
 

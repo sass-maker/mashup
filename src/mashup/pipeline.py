@@ -80,8 +80,10 @@ def enrich(cfg: Config, *, concurrency: int = 4, progress=None) -> dict[str, int
         return store.counts()
 
 
-def embed(cfg: Config, *, progress=None) -> dict[str, int]:
+def embed(cfg: Config, *, progress=None, reset: bool = False) -> dict[str, int]:
     with Store(cfg.db_path) as store:
+        if reset:
+            store.clear_embeddings()
         segments = store.get_segments()
         gw = Gateway(cfg)
         embed_segments(segments, gw, progress=progress)

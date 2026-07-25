@@ -12,9 +12,11 @@ Everything that costs money or network time in this project goes through
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import re
+from collections.abc import Callable
 from pathlib import Path
 from types import TracebackType
 from typing import Any
@@ -91,6 +93,9 @@ class Gateway:
         self._retry_wait = retry_wait
         self._retry_max_wait = retry_max_wait
         self._cache_dir = Path(config.cache_dir) / "gateway"
+        # Which embedding model the gateway actually served, so a mid-run
+        # provider fallback cannot silently mix vector spaces.
+        self._embed_model_used: str | None = None
         self._client = httpx.Client(
             base_url=config.gateway_url,
             timeout=timeout,
@@ -187,16 +192,33 @@ class Gateway:
         texts: list[str],
         *,
         model: str | None = None,
-        batch_size: int = 64,
+        batch_size: int = 16,
     ) -> list[list[float]]:
         """Embed `texts`, returning vectors in the same order as the input."""
         if not texts:
             return []
         out: list[list[float]] = []
         embed_model = model or self.config.embed_model
+
+        def same_space(data: dict[str, Any]) -> None:
+            """Reject a response served by a different embedding model.
+
+            Raised as transient so the retry loop re-asks: the gateway falls
+            back under load, and a moment later the requested model is
+            usually available again.
+            """
+            served = str(data.get("model") or embed_model)
+            expected = self._embed_model_used or embed_model
+            if served != expected:
+                raise _TransientGatewayError(
+                    f"embeddings served by {served!r}, expected {expected!r}"
+                )
+
         for start in range(0, len(texts), batch_size):
             chunk = texts[start : start + batch_size]
-            data = self._post("/v1/embeddings", {"model": embed_model, "input": chunk})
+            data = self._post(
+                "/v1/embeddings", {"model": embed_model, "input": chunk}, validate=same_space
+            )
             try:
                 items = data["data"]
                 # Providers are allowed to return the batch out of order; `index`
@@ -209,23 +231,68 @@ class Gateway:
                 ) from exc
             if len(vectors) != len(chunk):
                 raise GatewayError(f"expected {len(chunk)} embeddings, got {len(vectors)}")
+
+            # The gateway falls back across embedding providers, and a fallback
+            # returns vectors in a completely different space. Observed on a
+            # 727-segment run: 151 vectors at 3072 dims from gemini and 576 at
+            # 1024 from a voyage fallback. Cosine similarity across two spaces
+            # is meaningless, and had the dimensions happened to match it would
+            # have corrupted retrieval silently instead of raising.
+            served = str(data.get("model") or embed_model)
+            if self._embed_model_used is None:
+                self._embed_model_used = served
+            elif served != self._embed_model_used:
+                raise GatewayError(
+                    f"gateway switched embedding model mid-run: "
+                    f"{self._embed_model_used!r} -> {served!r}. Vectors from "
+                    f"different models are not comparable; re-embed the corpus."
+                )
             out.extend(vectors)
         return out
 
+    @property
+    def embed_model_used(self) -> str | None:
+        """The model that actually served embeddings, as reported by the gateway."""
+        return self._embed_model_used
+
     # ------------------------------------------------------------------ internal
 
-    def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def _post(
+        self,
+        path: str,
+        payload: dict[str, Any],
+        *,
+        validate: Callable[[dict[str, Any]], None] | None = None,
+    ) -> dict[str, Any]:
+        """POST with retry and caching.
+
+        `validate` runs inside the retry loop and before the response is
+        cached, so a response the caller considers unusable is retried rather
+        than persisted. A cached response is validated too — an entry written
+        before the rule existed must not be trusted forever.
+        """
         # The gateway requires the project on every /v1 call.
         body = {**payload, "project_id": self.config.project_id}
         key = _cache_key(path, str(body.get("model", "")), body)
         cached = self._cache_read(key)
         if cached is not None:
-            return cached
-        data = self._post_with_retry(path, body)
+            if validate is None:
+                return cached
+            try:
+                validate(cached)
+                return cached
+            except GatewayError:
+                self._cache_delete(key)
+        data = self._post_with_retry(path, body, validate)
         self._cache_write(key, data)
         return data
 
-    def _post_with_retry(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
+    def _post_with_retry(
+        self,
+        path: str,
+        body: dict[str, Any],
+        validate: Callable[[dict[str, Any]], None] | None = None,
+    ) -> dict[str, Any]:
         retrying = Retrying(
             stop=stop_after_attempt(self._retry_attempts),
             wait=wait_exponential(multiplier=self._retry_wait, max=self._retry_max_wait),
@@ -234,7 +301,10 @@ class Gateway:
         )
         for attempt in retrying:
             with attempt:
-                return self._send(path, body)
+                data = self._send(path, body)
+                if validate is not None:
+                    validate(data)
+                return data
         raise GatewayError("retry loop exhausted without a result")  # pragma: no cover
 
     def _send(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -265,6 +335,11 @@ class Gateway:
         except (OSError, ValueError):
             # A corrupt or missing entry is just a miss.
             return None
+
+    def _cache_delete(self, key: str) -> None:
+        """Drop a cached response that turned out to be unusable."""
+        with contextlib.suppress(OSError):
+            (self._cache_dir / f"{key}.json").unlink(missing_ok=True)
 
     def _cache_write(self, key: str, data: dict[str, Any]) -> None:
         if not self.use_cache:
