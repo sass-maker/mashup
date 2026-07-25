@@ -96,8 +96,9 @@ def test_split_source_handles_empty_input():
 def test_non_speech_artefacts_are_dropped():
     """Whisper emits a stock phrase over music/applause; 30s of "Thank you."
     is not content and must not reach the planner."""
-    from mashup.segment.splitter import drop_non_speech, speech_density
     from conftest import make_segment
+
+    from mashup.segment.splitter import drop_non_speech, speech_density
 
     junk = make_segment("junk", duration=30.0, text="Thank you.")
     real = make_segment("real", duration=30.0, text=" ".join(["word"] * 75))
@@ -108,8 +109,9 @@ def test_non_speech_artefacts_are_dropped():
 
 def test_filter_keeps_sparse_but_genuine_speech():
     """A slow segment that still carries real dialogue must survive."""
-    from mashup.segment.splitter import drop_non_speech
     from conftest import make_segment
+
+    from mashup.segment.splitter import drop_non_speech
 
     sparse = make_segment("sparse", duration=30.0, text=" ".join(["word"] * 20))
     assert [s.id for s in drop_non_speech([sparse])] == ["sparse"]
