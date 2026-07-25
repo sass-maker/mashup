@@ -59,6 +59,7 @@ def test_whisperkit_backend_writes_atomic_srt(
     assert not output.with_suffix(".srt.partial").exists()
     assert commands[0][0:2] == ["whisperkit-cli", "transcribe"]
     assert commands[0][commands[0].index("--model-path") + 1] == "/models/whisper-small"
+    assert commands[0][commands[0].index("--chunking-strategy") + 1] == "none"
 
 
 def test_missing_whisperkit_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

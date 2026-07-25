@@ -101,10 +101,13 @@ def _transcribe_whisperkit(media: Path, model_dir: str | None, language: str) ->
             str(wav),
             "--language",
             language,
-            # VAD chunking keeps long recordings from looping on repeated
-            # phrases, which vintage broadcast audio provokes readily.
+            # Measured on a 5-minute slice of the dev archive: `vad` re-emits
+            # whole decoded windows, giving 49% duplicate cues (identical
+            # internal whisper timestamps at advancing wall-clock times).
+            # `none` gives 2%, and those are genuine repeats in the audio.
+            # Duplicate cues would poison the non-repetition scoring term.
             "--chunking-strategy",
-            "vad",
+            "none",
             "--report",
             "--report-path",
             str(tmpdir),

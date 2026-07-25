@@ -59,6 +59,8 @@ content domain at a time (comedy is the target).
 - 2026-07-25 — added an optional WhisperKit CLI backend for faster local
   transcription, retained mlx-whisper fallback, stripped Whisper control
   tokens before segmentation, and added direct backend/atomic-output tests.
+  A five-minute archive slice froze WhisperKit chunking to `none`: VAD emitted
+  49% duplicate cues versus 2% genuine audio repeats without chunking.
 - Next — run the pipeline end to end against the real Groucho archive, exercise
   the editor against its real media, then run the blind comparison.
 
