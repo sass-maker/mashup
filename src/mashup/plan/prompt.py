@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from mashup.gateway import Gateway, GatewayError
 
@@ -59,8 +60,21 @@ def _fallback_parse(prompt: str) -> MashupRequest:
     return MashupRequest(prompt=prompt, query=query or prompt, beats=beats)
 
 
+def _reachable(gw: Gateway) -> bool:
+    """Whether asking the model is worth attempting.
+
+    A key means yes. Without one, the content-addressed cache from an earlier
+    run can still answer this exact brief, which is much better than the regex
+    path — but if there is no cache either, skip the doomed 401 round trip.
+    With local embeddings that is what lets `build` run uncredentialled.
+    """
+    if getattr(gw.config, "gateway_api_key", ""):
+        return True
+    return (Path(gw.config.cache_dir) / "gateway").is_dir()
+
+
 def parse_request(prompt: str, gw: Gateway | None = None) -> MashupRequest:
-    if gw is None:
+    if gw is None or not _reachable(gw):
         return _fallback_parse(prompt)
     try:
         data = gw.chat_json(

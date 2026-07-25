@@ -18,6 +18,10 @@ dependencies = [
 # Local subtitle generation for archives that ship without SRT/VTT.
 # Apple-silicon only; the rest of the pipeline never imports these.
 transcribe = ["mlx-whisper>=0.4.2"]
+# In-process embeddings — the default backend. Kept optional so that a
+# gateway-only install stays light, but present in the dev group below so a
+# plain `uv sync` gets a working default.
+local = ["torch>=2.4.0", "transformers>=4.44.0"]
 
 [project.scripts]
 mashup = "mashup.cli:app"
@@ -31,6 +35,8 @@ dev = [
     "pytest>=8.3.0",
     "pytest-cov>=6.0.0",
     "ruff>=0.8.0",
+    "torch>=2.4.0",
+    "transformers>=4.44.0",
 ]
 
 [tool.uv.build-backend]

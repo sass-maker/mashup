@@ -11,12 +11,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from mashup.config import Config
+from mashup.embedding import make_embedder
 from mashup.gateway import Gateway
 from mashup.ingest import ingest_archive
 from mashup.models import EDL, Clip, Segment, Source
 from mashup.plan.planner import PlanResult, plan, plan_random, plan_semantic
 from mashup.plan.prompt import MashupRequest, parse_request
-from mashup.plan.score import PlanContext, prepare_context
+from mashup.plan.score import Calibration, PlanContext, prepare_context
 from mashup.render.boundaries import detect_silences, snap_boundaries
 from mashup.retrieve import Retriever, embed_segments
 from mashup.segment.enrich import enrich_segments
@@ -80,14 +81,27 @@ def enrich(cfg: Config, *, concurrency: int = 4, progress=None) -> dict[str, int
         return store.counts()
 
 
-def embed(cfg: Config, *, progress=None, reset: bool = False) -> dict[str, int]:
+def embed(cfg: Config, *, progress=None, reset: bool = False, notice=None) -> dict[str, int]:
+    # Construct the gateway through the module-level name so the backend stays
+    # substitutable, and only when it is the backend actually in use.
+    gw = Gateway(cfg) if cfg.embed_backend == "gateway" else None
+    embedder = make_embedder(cfg, gateway=gw)
     with Store(cfg.db_path) as store:
-        if reset:
+        stale = [m for m in store.embedding_models() if m != embedder.name]
+        if reset or stale:
+            if stale and not reset and notice:
+                # Not a warning to be dismissed: vectors from two models are
+                # not comparable, so keeping them would quietly poison every
+                # similarity in the pipeline. Re-embedding is the only
+                # correct move, and locally it costs seconds.
+                notice(
+                    f"re-embedding: stored vectors came from {', '.join(repr(m) for m in stale)}, "
+                    f"now using {embedder.name!r}"
+                )
             store.clear_embeddings()
         segments = store.get_segments()
-        gw = Gateway(cfg)
-        embed_segments(segments, gw, progress=progress)
-        store.update_segment_embeddings(segments)
+        embed_segments(segments, embedder, progress=progress)
+        store.update_segment_embeddings(segments, embedder.name)
         return store.counts()
 
 
@@ -133,6 +147,7 @@ def result_to_edl(
     target: float,
     snap: bool = True,
     crossfade: float = 0.0,
+    calibration: Calibration | None = None,
 ) -> EDL:
     sources = {s.id: s for s in store.get_sources()}
     clips = [
@@ -144,6 +159,7 @@ def result_to_edl(
     from mashup.plan.score import WEIGHT_PROFILES
 
     return EDL(
+        calibration=(calibration or Calibration()).as_dict(),
         strategy=result.strategy,
         prompt=request.prompt,
         target_duration=target,
@@ -169,15 +185,21 @@ def make_mashups(
 ) -> list[EDL]:
     """Plan one EDL per strategy from an already-enriched archive."""
     gw = Gateway(cfg)
+    embedder = make_embedder(cfg, gateway=gw)
     request = parse_request(prompt, gw)
+
+    # The brief, its beats and the required-context strings are all questions
+    # asked of the corpus, so they take the query side of an asymmetric model.
+    def embed_query(texts: list[str]) -> list[list[float]]:
+        return embedder.embed(texts, kind="query")
 
     with Store(cfg.db_path) as store:
         segments = store.get_segments()
         retriever = Retriever(segments)
         sources = {s.id: s for s in store.get_sources()}
 
-        query_vec = gw.embed([request.query])[0]
-        beat_vecs = gw.embed(request.beats) if request.beats else []
+        query_vec = embed_query([request.query])[0]
+        beat_vecs = embed_query(request.beats) if request.beats else []
 
         ctx = PlanContext(
             query_vec=query_vec,
@@ -199,15 +221,35 @@ def make_mashups(
         ctx = prepare_context(
             ctx,
             [c.segment for c in candidates] + [c.segment for c in baseline_candidates],
-            gw.embed,
+            # A required_context string ("the audience knows he is a plumber")
+            # is a statement compared against other transcript, not a search
+            # intent, so it takes the document side of an asymmetric model.
+            lambda texts: embedder.embed(texts, kind="document"),
         )
 
-        results = [plan(s, candidates, ctx, retriever.pairwise) for s in strategies]
+        # The callback strategy needs material MMR deliberately removed, so it
+        # plans over the diversified pool plus the entity-linked clips that
+        # make a payoff possible at all.
+        callback_pool = retriever.entity_expansion(
+            candidates, query_vec, common=ctx.common_entities
+        )
+        pools = {s: (callback_pool if s == "callback" else candidates) for s in strategies}
+
+        results = [plan(s, pools[s], ctx, retriever.pairwise) for s in strategies]
         if include_baselines:
             results.append(plan_semantic(baseline_candidates, ctx, retriever.pairwise))
             results.append(plan_random(baseline_candidates, ctx, retriever.pairwise))
 
         return [
-            result_to_edl(r, request, cfg, store, target=target, snap=snap, crossfade=crossfade)
+            result_to_edl(
+                r,
+                request,
+                cfg,
+                store,
+                target=target,
+                snap=snap,
+                crossfade=crossfade,
+                calibration=ctx.calibration,
+            )
             for r in results
         ]

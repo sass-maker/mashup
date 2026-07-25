@@ -40,18 +40,20 @@ backend.
 
 ## Configuration
 
-Model access goes through the fleet free-ai gateway (OpenAI-compatible), so
-this project holds no provider keys of its own. Values are read from the
-environment or a `.env` file.
+Chat goes through the fleet free-ai gateway (OpenAI-compatible), so this
+project holds no provider keys of its own. **Embeddings run locally by
+default** — see below. Values are read from the environment or a `.env` file.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `MASHUP_GATEWAY_API_KEY` | — | Gateway key. Required by `enrich`, `embed` and `build`. `GATEWAY_API_KEY` is accepted as an alias. |
+| `MASHUP_GATEWAY_API_KEY` | — | Gateway key. Required by `enrich`. `GATEWAY_API_KEY` is accepted as an alias. |
+| `MASHUP_EMBED_BACKEND` | `local` | `local` runs a HuggingFace encoder in-process; `gateway` calls out. |
+| `MASHUP_LOCAL_EMBED_MODEL` | `bge-base` | Alias from `mashup models`, or any HuggingFace repo id. |
 | `MASHUP_WHISPERKIT_MODEL` | — | Optional existing CoreML model directory for `whisperkit-cli`. |
 | `MASHUP_GATEWAY_URL` | `https://ai-gateway.sassmaker.com` | Gateway base URL. |
 | `MASHUP_PROJECT_ID` | `mashup` | Sent on every `/v1` call. |
 | `MASHUP_CHAT_MODEL` | `auto` | Chat model for brief parsing and enrichment. |
-| `MASHUP_EMBED_MODEL` | `gemini-embedding-001` | Embedding model. The gateway rejects `auto` here. |
+| `MASHUP_EMBED_MODEL` | `gemini-embedding-001` | Gateway embedding model. Only read when the backend is `gateway`; the gateway rejects `auto` here. |
 | `MASHUP_WORKDIR` | `.mashup` | State directory. `--workdir` overrides it per command. |
 
 The editor server reads three more: `MASHUP_WEB_DIST` (where the built UI
@@ -61,8 +63,38 @@ lives), `MASHUP_SERVE_OFFLINE` (never attempt a gateway call) and
 Fleet operators can inject the key rather than exporting it:
 
 ```bash
-infisical run --projectId <free-ai> -- mashup build --prompt "..."
+infisical run --projectId <free-ai> -- mashup enrich
 ```
+
+### Embeddings
+
+Embeddings are the stage you re-run most while tuning retrieval, and the one
+where a metered API hurts most. They default to a local encoder:
+
+```bash
+mashup models      # list the known aliases
+mashup embed       # 727 segments in ~9s on an M-series laptop, no network
+```
+
+`bge-base` (`BAAI/bge-base-en-v1.5`, 768d) is the default. `minilm` is roughly
+three times faster and a little less accurate; any HuggingFace repo id also
+works, with mean pooling assumed. Models in the BGE family are used
+asymmetrically — the brief and its beats get the query prefix they were
+trained with, transcript segments do not.
+
+Two things follow from making the encoder swappable:
+
+- **Vectors record which model produced them.** Two 384-dimension models mix
+  without any dimension check noticing, which corrupts retrieval silently.
+  `mashup embed` re-embeds automatically when the model changes, and
+  `mashup status` shows what is stored.
+- **Similarity thresholds are calibrated, not hard-coded.** A fixed cosine cut
+  is a claim about one model's similarity scale. Each run measures the
+  redundancy, flow and context-coverage cuts from percentiles of the candidate
+  pool's own distribution and records them in the EDL. See
+  `docs/decisions.md`.
+
+Set `MASHUP_EMBED_BACKEND=gateway` to compare against the hosted models.
 
 ## Quickstart
 
@@ -86,8 +118,10 @@ planning is the stage you iterate on fifty times.
 mashup ingest --input ./archive            # probe, transcribe if needed, split into segments
 mashup ingest --input ./archive --no-transcribe
 mashup enrich --concurrency 4              # LLM pass -> topic/role/energy/context per segment
-mashup embed                               # gateway embeddings -> float32 blobs in SQLite
-mashup status                              # sources / cues / segments / enriched / embedded
+mashup embed                               # local encoder -> float32 blobs in SQLite
+mashup embed --reset                       # drop and recompute every vector
+mashup models                              # local embedding models this build knows
+mashup status                              # counts, plus which embedder produced the vectors
 
 mashup build --prompt "..." --duration 420 --variants 3 --output output
 mashup build --prompt "..." --baselines --no-render      # add semantic + random controls
@@ -101,8 +135,9 @@ mashup serve output/escalation.json --port 8765          # loopback-only editor
 
 `--subtitles` takes `none`, `sidecar` or `burn`; burn-in needs a libass-enabled
 ffmpeg. `--variants` selects the first N of `chronological, escalation,
-callback` (max 3). `ingest`, `status`, `preview`, `render` and `serve` work
-without a gateway key; `enrich`, `embed` and `build` do not.
+callback` (max 3). With local embeddings only `enrich` needs a gateway key —
+`build` falls back to regex brief parsing without one, so the whole planning
+and rendering loop runs offline.
 
 ### The transcript editor
 
@@ -161,8 +196,9 @@ archive (mp4/mp3 + srt/vtt)
   -> ingest      normalise cues, probe media, transcribe if needed
   -> split       cues -> pause-delimited atoms -> self-contained segments
   -> enrich      one LLM pass -> SegmentMeta per segment
-  -> embed       gateway embeddings -> float32 blobs in SQLite
+  -> embed       local encoder -> float32 blobs in SQLite
   -> retrieve    MMR over cosine similarity -> candidate pool
+                 (+ entity expansion for the callback strategy)
   -> plan        beam search under a weighted objective -> sequence
   -> EDL         inspectable JSON, the editor's document
   -> render      snap, cut, normalise, concat, subtitle -> MP4

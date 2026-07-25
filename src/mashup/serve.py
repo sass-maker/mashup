@@ -43,7 +43,9 @@ from mashup.config import Config
 from mashup.models import EDL, ScoreTerms, Segment, SegmentMeta, Source
 from mashup.plan.score import (
     WEIGHT_PROFILES,
+    Calibration,
     PlanContext,
+    common_entities,
     prepare_context,
     score_sequence,
     term_callback,
@@ -231,7 +233,9 @@ def rescore(edl: EDL, archive: Archive, ctx: PlanContext | None) -> ScoreReport:
     terms = edl.terms.model_copy(
         update={
             "escalation": term_escalation(seq),
-            "callback": term_callback(seq),
+            # Derivable from the archive alone, so the degraded path is still
+            # protected from reading the host's name as a running gag.
+            "callback": term_callback(seq, common_entities(archive.segments)),
             "duration_fit": term_duration_fit(seq, edl.target_duration),
             "source_diversity": term_source_diversity(seq),
         }
@@ -272,15 +276,18 @@ class EditorState:
         self._ctx_failed = False
         self._query_vecs: dict[str, list[float]] = {}
 
-    # -- gateway-backed helpers (best effort; never fatal) -----------------
+    # -- model-backed helpers (best effort; never fatal) -------------------
 
     @property
     def offline(self) -> bool:
-        """No network attempts: forced off, or nothing to embed against."""
+        """No embeddings available, so only the structural terms can be scored."""
         if os.getenv("MASHUP_SERVE_OFFLINE"):
             return True
         if not self.archive.embedded:
             return True
+        if self.cfg.embed_backend == "local":
+            # Nothing to reach for; the encoder runs in this process.
+            return False
         # Without a key the only hope is the on-disk gateway cache from `build`.
         return not (self.cfg.gateway_api_key or (self.cfg.cache_dir / "gateway").exists())
 
@@ -290,12 +297,18 @@ class EditorState:
         # One quick attempt: a stalled PUT is worse than a degraded score.
         return Gateway(self.cfg, timeout=20.0, retry_attempts=1)
 
+    def _embedder(self, gw):
+        from mashup.embedding import make_embedder
+
+        return make_embedder(self.cfg, gateway=gw)
+
     def plan_context(self, edl: EDL) -> PlanContext | None:
         """Rebuild the planner's scoring context, or None if we cannot.
 
-        The EDL does not persist the query vector, so this re-derives it via the
-        gateway. `build` already made the identical calls, so the content-addressed
-        gateway cache normally answers without touching the network.
+        The EDL does not persist the query vector, so this re-derives it. With
+        the local backend that is a few milliseconds of CPU; with the gateway,
+        `build` already made the identical calls, so the content-addressed
+        cache normally answers without touching the network.
         """
         if self.offline or self._ctx_failed:
             return None
@@ -306,15 +319,30 @@ class EditorState:
 
             gw = self._gateway()
             try:
+                embedder = self._embedder(gw)
+
+                def embed_query(texts: list[str]) -> list[list[float]]:
+                    return embedder.embed(texts, kind="query")
+
                 request = parse_request(edl.prompt, gw)
                 ctx = PlanContext(
-                    query_vec=gw.embed([request.query])[0],
+                    query_vec=embed_query([request.query])[0],
                     target_duration=edl.target_duration,
                     source_ordinals={sid: s.ordinal for sid, s in self.archive.sources.items()},
-                    beat_vecs=gw.embed(request.beats) if request.beats else [],
+                    beat_vecs=embed_query(request.beats) if request.beats else [],
                     beat_labels=list(request.beats),
                 )
-                prepare_context(ctx, self.archive.segments, gw.embed)
+                prepare_context(
+                    ctx,
+                    self.archive.segments,
+                    lambda texts: embedder.embed(texts, kind="document"),
+                    # The build measured its thresholds on the candidate pool;
+                    # re-measuring here against the whole archive would give a
+                    # score that silently means something different.
+                    calibrate=not edl.calibration,
+                )
+                if edl.calibration:
+                    ctx.calibration = Calibration.from_dict(edl.calibration)
             finally:
                 gw.close()
         except Exception:  # noqa: BLE001 — degraded scoring beats a 500
@@ -332,7 +360,7 @@ class EditorState:
         try:
             gw = self._gateway()
             try:
-                vec = gw.embed([text])[0]
+                vec = self._embedder(gw).embed([text], kind="query")[0]
             finally:
                 gw.close()
         except Exception:  # noqa: BLE001 — fall back to substring ranking

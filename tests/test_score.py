@@ -95,25 +95,54 @@ def test_escalation_rewards_forward_role_arc():
 def test_callback_requires_a_gap():
     # Shared entity in adjacent clips is continuation, not a callback.
     adjacent = [
-        make_segment("a", entities=["violin"]),
-        make_segment("b", entities=["violin"]),
-        make_segment("c", entities=["vault"]),
+        make_segment("a", source_id="ep01", entities=["violin"]),
+        make_segment("b", source_id="ep02", entities=["violin"]),
+        make_segment("c", source_id="ep03", entities=["vault"]),
     ]
     planted = [
-        make_segment("a", entities=["violin"]),
-        make_segment("b", entities=["vault"]),
-        make_segment("c", entities=["violin"]),
+        make_segment("a", source_id="ep01", entities=["violin"]),
+        make_segment("b", source_id="ep02", entities=["vault"]),
+        make_segment("c", source_id="ep03", entities=["violin"]),
     ]
     assert term_callback(planted) > term_callback(adjacent)
 
 
 def test_callback_rewards_bookending():
     bookend = [
-        make_segment("a", entities=["violin"]),
-        make_segment("b", entities=["vault"]),
-        make_segment("c", entities=["violin"], role=Role.CALLBACK),
+        make_segment("a", source_id="ep01", entities=["violin"]),
+        make_segment("b", source_id="ep02", entities=["vault"]),
+        make_segment("c", source_id="ep03", entities=["violin"], role=Role.CALLBACK),
     ]
     assert term_callback(bookend) > 0.7
+
+
+def test_callback_ignores_a_repeat_inside_one_recording():
+    """A name recurring within a single episode is the original conversation
+    continuing, not something the planner built. Counting it let the random
+    control outscore the callback strategy on callback."""
+    same_episode = [
+        make_segment("a", source_id="ep01", entities=["violin"]),
+        make_segment("b", source_id="ep01", entities=["vault"]),
+        make_segment("c", source_id="ep01", entities=["violin"], role=Role.CALLBACK),
+    ]
+    woven = [
+        make_segment("a", source_id="ep01", entities=["violin"]),
+        make_segment("b", source_id="ep02", entities=["vault"]),
+        make_segment("c", source_id="ep03", entities=["violin"], role=Role.CALLBACK),
+    ]
+    assert term_callback(same_episode) < term_callback(woven)
+
+
+def test_callback_ignores_the_archives_boilerplate():
+    """Every episode names the host and the sponsor; treating that as a plant
+    and payoff would score any two clips as a callback."""
+    boilerplate = [
+        make_segment("a", source_id="ep01", entities=["groucho"]),
+        make_segment("b", source_id="ep02", entities=["vault"]),
+        make_segment("c", source_id="ep03", entities=["groucho"]),
+    ]
+    common = frozenset({"groucho"})
+    assert term_callback(boilerplate, common) < term_callback(boilerplate)
 
 
 def test_duration_fit_peaks_at_target():

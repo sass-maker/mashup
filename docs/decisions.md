@@ -277,3 +277,9 @@ recomputes only the four terms computable from the sequence alone — escalation
 callback, duration fit, source diversity — carries the rest forward unchanged,
 and *says so* in the response. Showing a fabricated relevance number would be
 worse than showing a stale one.
+
+---
+
+Decisions 12–14, covering the local embedding backend, threshold calibration
+and the callback strategy's candidate pool, live in
+[`decisions-retrieval.md`](decisions-retrieval.md).

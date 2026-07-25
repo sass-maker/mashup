@@ -23,14 +23,113 @@ from mashup.models import Role, ScoreTerms, Segment
 
 EmbedFn = Callable[[list[str]], list[list[float]]]
 
-# Above this cosine, two segments are the same material told twice.
+# Fallback thresholds, used only when there is too little material to measure
+# the corpus's own distribution. See `Calibration` for why a fixed cosine is
+# not a portable way to say "too similar".
 REDUNDANCY_THRESHOLD = 0.82
-# A required_context string is considered covered by an earlier clip at or
-# above this cosine. Deliberately lenient — a false "missing context" costs a
-# good clip, a false "covered" costs a moment of confusion.
 CONTEXT_COVERED_THRESHOLD = 0.55
-# Adjacent clips should feel connected but not repetitive.
 FLOW_BAND = (0.30, 0.72)
+
+# Percentiles the calibrated thresholds are drawn from.
+REDUNDANCY_PCT = 99.0  # "more alike than all but the closest pairs here"
+FLOW_PCT = (25.0, 90.0)  # related, but short of interchangeable
+CONTEXT_PCT = 25.0  # a weak-but-real match to the prerequisite
+# Below this many embedded segments the percentiles are noise, so keep the
+# fixed fallbacks. Small unit-test corpora land here deliberately.
+MIN_CALIBRATION_SEGMENTS = 12
+
+
+@dataclass(frozen=True)
+class Calibration:
+    """Similarity thresholds expressed in the corpus's own distribution.
+
+    Every cosine constant above is a claim about one embedding model's
+    similarity scale, not about comedy. Measured on this archive, bge-base
+    puts 99.9% of segment pairs below 0.841, so a fixed 0.82 redundancy cut
+    fires on almost nothing: `non_repetition` returns 1.00 for every candidate
+    sequence and quietly stops discriminating, while looking perfectly
+    healthy in the term breakdown. The same swap pushed most adjacent pairs
+    inside the fixed flow band, flattening `progression` too.
+
+    Deriving each cut from a percentile of the actual similarity distribution
+    makes the terms mean the same thing whichever encoder produced the
+    vectors, which is what allows the embedding model to be changed at all.
+    """
+
+    redundancy: float = REDUNDANCY_THRESHOLD
+    context_covered: float = CONTEXT_COVERED_THRESHOLD
+    flow_low: float = FLOW_BAND[0]
+    flow_high: float = FLOW_BAND[1]
+    # "default" or the corpus size it was measured on, for the EDL record.
+    source: str = "default"
+
+    @classmethod
+    def from_corpus(
+        cls,
+        segments: Sequence[Segment],
+        context_vecs: dict[str, list[float]] | None = None,
+    ) -> Calibration:
+        vectors = [s.embedding for s in segments if s.embedding]
+        if len(vectors) < MIN_CALIBRATION_SEGMENTS:
+            return cls()
+        matrix = np.vstack([_unit(v) for v in vectors])
+        pairs = matrix @ matrix.T
+        upper = pairs[np.triu_indices(len(matrix), k=1)]
+
+        low, high = (float(np.percentile(upper, p)) for p in FLOW_PCT)
+        # A band with no width would make every flow reading a division by
+        # near-zero; fall back rather than emit garbage.
+        if not high > low:
+            return cls()
+
+        top = float(upper.max())
+        redundancy = float(np.percentile(upper, REDUNDANCY_PCT))
+        if redundancy >= top:
+            # The top of the distribution is a tied block — an archive with
+            # heavily repeated boilerplate, say. Leaving the cut at the
+            # ceiling would mean no pair can ever exceed it and the term goes
+            # inert, so split the difference between typical and maximal.
+            redundancy = 0.5 * float(np.percentile(upper, 50.0)) + 0.5 * top
+
+        covered = float(np.percentile(upper, FLOW_PCT[1]))
+        if context_vecs:
+            # How well prerequisites match this corpus at all. Anchoring on
+            # their own distribution keeps the term honest when the model
+            # embeds prerequisite-shaped text differently from transcript.
+            ctx_matrix = np.vstack([_unit(v) for v in context_vecs.values()])
+            best = (ctx_matrix @ matrix.T).max(axis=1)
+            covered = float(np.percentile(best, CONTEXT_PCT))
+
+        return cls(
+            redundancy=redundancy,
+            context_covered=covered,
+            flow_low=low,
+            flow_high=high,
+            source=f"corpus:{len(vectors)}",
+        )
+
+    def as_dict(self) -> dict[str, float | str]:
+        return {
+            "redundancy": round(self.redundancy, 4),
+            "context_covered": round(self.context_covered, 4),
+            "flow_low": round(self.flow_low, 4),
+            "flow_high": round(self.flow_high, 4),
+            "source": self.source,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> Calibration:
+        if not data:
+            return cls()
+        known = {
+            f: data[f]
+            for f in ("redundancy", "context_covered", "flow_low", "flow_high")
+            if f in data
+        }
+        return cls(**known, source=str(data.get("source", "restored")))
+
+
+DEFAULT_CALIBRATION = Calibration()
 
 WEIGHT_PROFILES: dict[str, dict[str, float]] = {
     # Archive order. Sequencing is fixed, so the weights that remain are the
@@ -102,6 +201,10 @@ class PlanContext:
     beat_labels: list[str] = field(default_factory=list)
     # required_context string -> embedding, filled by `prepare_context`.
     context_vecs: dict[str, list[float]] = field(default_factory=dict)
+    # Similarity cuts measured from the material in play, not hard-coded.
+    calibration: Calibration = DEFAULT_CALIBRATION
+    # Entities too common in this archive to signal a callback.
+    common_entities: frozenset[str] = frozenset()
 
     def relevance_of(self, seg: Segment) -> float:
         if not seg.embedding:
@@ -113,8 +216,16 @@ def prepare_context(
     ctx: PlanContext,
     segments: list[Segment],
     embed_fn: EmbedFn,
+    *,
+    calibrate: bool = True,
 ) -> PlanContext:
-    """Embed every distinct required_context string once."""
+    """Embed every distinct required_context string once, then calibrate.
+
+    `segments` should be the material actually in play, not the whole archive:
+    "unusually similar" ought to mean unusual among the clips this mashup
+    could draw on, which is a tighter, more topically clustered distribution
+    than the archive at large.
+    """
     needed = sorted(
         {c.strip() for s in segments for c in s.meta.required_context if c.strip()}
         - set(ctx.context_vecs)
@@ -122,7 +233,28 @@ def prepare_context(
     if needed:
         for text, vec in zip(needed, embed_fn(needed), strict=True):
             ctx.context_vecs[text] = vec
+    if calibrate:
+        ctx.calibration = Calibration.from_corpus(segments, ctx.context_vecs)
+    ctx.common_entities = common_entities(segments)
     return ctx
+
+
+# An entity in more than this share of the material is the show's furniture —
+# the host's name, the sponsor, the format's catchphrase — not a running gag.
+COMMON_ENTITY_SHARE = 0.05
+
+
+def common_entities(segments: Sequence[Segment], share: float = COMMON_ENTITY_SHARE) -> frozenset:
+    """Entities frequent enough that sharing one says nothing."""
+    if not segments:
+        return frozenset()
+    counts: Counter[str] = Counter()
+    for seg in segments:
+        # Per segment, not per mention: a clip repeating a name ten times
+        # still only evidences that clip.
+        counts.update({e.strip().lower() for e in seg.meta.entities if e.strip()})
+    cutoff = max(2, math.ceil(share * len(segments)))
+    return frozenset(name for name, n in counts.items() if n > cutoff)
 
 
 # ---- individual terms ---------------------------------------------------
@@ -159,21 +291,27 @@ def term_context_completeness(seq: list[Segment], ctx: PlanContext) -> float:
             vec = ctx.context_vecs.get(req)
             if vec is None:
                 continue
-            if float(np.max(prior_mat @ _unit(vec))) >= CONTEXT_COVERED_THRESHOLD:
+            if float(np.max(prior_mat @ _unit(vec))) >= ctx.calibration.context_covered:
                 covered += 1
         scores.append(covered / len(reqs))
     return float(np.mean(scores))
 
 
-def term_non_repetition(seq: list[Segment], sim: Callable[[Segment, Segment], float]) -> float:
+def term_non_repetition(
+    seq: list[Segment],
+    sim: Callable[[Segment, Segment], float],
+    calibration: Calibration = DEFAULT_CALIBRATION,
+) -> float:
     """Penalises both near-duplicate material and topic monotony."""
     if len(seq) < 2:
         return 1.0
+    cut = calibration.redundancy
+    headroom = max(1.0 - cut, 1e-6)
     excesses: list[float] = []
     for i in range(len(seq)):
         for j in range(i + 1, len(seq)):
             s = sim(seq[i], seq[j])
-            excesses.append(max(0.0, s - REDUNDANCY_THRESHOLD) / (1.0 - REDUNDANCY_THRESHOLD))
+            excesses.append(max(0.0, s - cut) / headroom)
     duplicate_penalty = float(np.mean(excesses))
 
     topics = [frozenset(t.lower() for t in s.meta.topic) for s in seq]
@@ -219,7 +357,7 @@ def term_progression(
         finished = 1.0 if assigned[-1] == len(ctx.beat_vecs) - 1 else 0.0
         return _clamp01(0.5 * ordered + 0.3 * coverage + 0.2 * finished)
 
-    lo, hi = FLOW_BAND
+    lo, hi = ctx.calibration.flow_low, ctx.calibration.flow_high
     mid = (lo + hi) / 2
     flows = []
     for a, b in zip(seq, seq[1:], strict=False):
@@ -248,24 +386,33 @@ def term_escalation(seq: list[Segment]) -> float:
     return _clamp01(0.5 * energy_trend + 0.3 * forward + 0.2 * ends_high)
 
 
-def term_callback(seq: list[Segment]) -> float:
+def term_callback(seq: list[Segment], common_entities: frozenset[str] = frozenset()) -> float:
     """Rewards planted-then-paid-off material.
 
-    A shared entity only counts across a gap — two adjacent clips about the
-    same thing are continuation, not callback.
+    Three things have to hold before a shared entity counts.
+
+    It must span a gap — two adjacent clips about the same thing are
+    continuation. It must span two different recordings: within one episode a
+    repeated name is just the same conversation continuing, and rewarding it
+    credits the planner for something the original edit already did. And the
+    entity must not be one of `common_entities`, the names so frequent in the
+    archive that sharing one says nothing — this corpus mentions "groucho" in
+    96 segments and the sponsor in 48, so without that filter almost any pair
+    of clips reads as a callback and the term rewards noise.
     """
     if len(seq) < 3:
         return 0.0
-    ents = [{e.strip().lower() for e in s.meta.entities if e.strip()} for s in seq]
-    hits = 0
-    for j in range(2, len(seq)):
-        for i in range(j - 1):
-            if ents[j] & ents[i]:
-                hits += 1
-                break
+    ents = [
+        {e.strip().lower() for e in s.meta.entities if e.strip()} - common_entities for s in seq
+    ]
+
+    def links(j: int, i: int) -> bool:
+        return bool(ents[j] & ents[i]) and seq[j].source_id != seq[i].source_id
+
+    hits = sum(1 for j in range(2, len(seq)) if any(links(j, i) for i in range(j - 1)))
     density = hits / (len(seq) - 2)
 
-    bookend = 1.0 if (ents and ents[-1] & ents[0]) else 0.0
+    bookend = 1.0 if links(len(seq) - 1, 0) else 0.0
     lands = 1.0 if seq[-1].meta.role in (Role.CALLBACK, Role.CLOSER) else 0.0
     return _clamp01(0.5 * density + 0.25 * bookend + 0.25 * lands)
 
@@ -303,10 +450,10 @@ def score_sequence(
     return ScoreTerms(
         relevance=term_relevance(seq, ctx),
         context_completeness=term_context_completeness(seq, ctx),
-        non_repetition=term_non_repetition(seq, sim),
+        non_repetition=term_non_repetition(seq, sim, ctx.calibration),
         progression=term_progression(seq, ctx, sim),
         escalation=term_escalation(seq),
-        callback=term_callback(seq),
+        callback=term_callback(seq, ctx.common_entities),
         duration_fit=term_duration_fit(seq, ctx.target_duration),
         source_diversity=term_source_diversity(seq),
     )

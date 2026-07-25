@@ -1,7 +1,12 @@
 """Runtime configuration.
 
-Model access goes through the fleet free-ai gateway (OpenAI-compatible), so
-this project holds no provider keys of its own — only a gateway key.
+Chat goes through the fleet free-ai gateway (OpenAI-compatible), so this
+project holds no provider keys of its own — only a gateway key.
+
+Embeddings default to a local model instead. They are re-run constantly while
+tuning retrieval, they are the one stage where the gateway's provider
+fallback can silently corrupt results, and a transformer small enough to
+embed a whole archive in seconds removes both problems for free.
 """
 
 from __future__ import annotations
@@ -18,6 +23,8 @@ DEFAULT_GATEWAY_URL = "https://ai-gateway.sassmaker.com"
 # The gateway rejects `auto` for embeddings; it must be an explicit model.
 DEFAULT_EMBED_MODEL = "gemini-embedding-001"
 DEFAULT_CHAT_MODEL = "auto"
+DEFAULT_EMBED_BACKEND = "local"
+DEFAULT_LOCAL_EMBED_MODEL = "bge-base"
 
 
 class ConfigError(RuntimeError):
@@ -32,6 +39,9 @@ class Config:
     chat_model: str
     embed_model: str
     workdir: Path
+    # "local" runs a HuggingFace encoder in-process; "gateway" calls out.
+    embed_backend: str = DEFAULT_EMBED_BACKEND
+    local_embed_model: str = DEFAULT_LOCAL_EMBED_MODEL
 
     @property
     def db_path(self) -> Path:
@@ -52,6 +62,7 @@ class Config:
 
 def load_config(workdir: Path | str | None = None, *, require_key: bool = True) -> Config:
     key = os.getenv("MASHUP_GATEWAY_API_KEY") or os.getenv("GATEWAY_API_KEY") or ""
+    backend = os.getenv("MASHUP_EMBED_BACKEND") or DEFAULT_EMBED_BACKEND
     if require_key and not key:
         raise ConfigError(
             "No gateway key. Set MASHUP_GATEWAY_API_KEY (or GATEWAY_API_KEY).\n"
@@ -66,4 +77,6 @@ def load_config(workdir: Path | str | None = None, *, require_key: bool = True) 
         chat_model=os.getenv("MASHUP_CHAT_MODEL") or DEFAULT_CHAT_MODEL,
         embed_model=os.getenv("MASHUP_EMBED_MODEL") or DEFAULT_EMBED_MODEL,
         workdir=wd,
+        embed_backend=backend,
+        local_embed_model=(os.getenv("MASHUP_LOCAL_EMBED_MODEL") or DEFAULT_LOCAL_EMBED_MODEL),
     )

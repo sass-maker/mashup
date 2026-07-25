@@ -49,11 +49,18 @@ CREATE TABLE IF NOT EXISTS segments (
     cue_end INTEGER NOT NULL,
     meta TEXT NOT NULL DEFAULT '{}',
     embedding BLOB,
-    embedding_dim INTEGER
+    embedding_dim INTEGER,
+    -- Which embedder produced the vector. Dimension alone cannot tell two
+    -- 384-dimension models apart, and mixing them corrupts retrieval without
+    -- raising anything.
+    embedding_model TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_segments_source ON segments(source_id);
 """
+
+# Columns added after the first release, applied to existing databases.
+MIGRATIONS = (("segments", "embedding_model", "TEXT"),)
 
 
 def _to_blob(vec: list[float]) -> bytes:
@@ -74,6 +81,15 @@ class Store:
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Add columns missing from a database created by an older version."""
+        with self.conn:
+            for table, column, decl in MIGRATIONS:
+                existing = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")}
+                if column not in existing:
+                    self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
     def close(self) -> None:
         self.conn.close()
@@ -186,18 +202,37 @@ class Store:
                 [(s.meta.model_dump_json(), s.id) for s in segments],
             )
 
-    def update_segment_embeddings(self, segments: list[Segment]) -> None:
+    def update_segment_embeddings(self, segments: list[Segment], model: str = "") -> None:
         with self.conn:
             self.conn.executemany(
-                "UPDATE segments SET embedding = ?, embedding_dim = ? WHERE id = ?",
-                [(_to_blob(s.embedding), len(s.embedding), s.id) for s in segments if s.embedding],
+                "UPDATE segments SET embedding = ?, embedding_dim = ?, embedding_model = ? "
+                "WHERE id = ?",
+                [
+                    (_to_blob(s.embedding), len(s.embedding), model, s.id)
+                    for s in segments
+                    if s.embedding
+                ],
             )
 
     def clear_embeddings(self) -> None:
-        """Drop every vector. Needed when the serving embedding model changes,
-        because vectors from two models are not comparable."""
+        """Drop every vector. Needed when the embedding model changes, because
+        vectors from two models are not comparable."""
         with self.conn:
-            self.conn.execute("UPDATE segments SET embedding = NULL, embedding_dim = NULL")
+            self.conn.execute(
+                "UPDATE segments SET embedding = NULL, embedding_dim = NULL, embedding_model = NULL"
+            )
+
+    def embedding_models(self) -> dict[str, int]:
+        """Which embedders produced the stored vectors, and how many each.
+
+        More than one entry means retrieval is comparing incomparable spaces.
+        Vectors written before the model was recorded come back under "".
+        """
+        rows = self.conn.execute(
+            "SELECT COALESCE(embedding_model, '') AS model, COUNT(*) AS n FROM segments "
+            "WHERE embedding IS NOT NULL GROUP BY model"
+        ).fetchall()
+        return {r["model"]: int(r["n"]) for r in rows}
 
     def get_segments(self, *, with_embeddings: bool = True) -> list[Segment]:
         rows = self.conn.execute("SELECT * FROM segments ORDER BY source_id, start").fetchall()

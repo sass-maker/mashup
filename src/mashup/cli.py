@@ -56,6 +56,26 @@ def _config(workdir: Path | None, *, require_key: bool = True):
         raise typer.Exit(2) from exc
 
 
+def _config_for_embedding(workdir: Path | None):
+    """Load config for a command that embeds but does not need chat.
+
+    Only the gateway backend makes a key mandatory. With the local backend
+    these commands run with no credentials at all.
+    """
+    cfg = _config(workdir, require_key=False)
+    if cfg.embed_backend == "gateway" and not cfg.gateway_api_key:
+        err.print(
+            "[red]MASHUP_EMBED_BACKEND=gateway needs MASHUP_GATEWAY_API_KEY.[/red]\n"
+            "Unset it to embed locally instead."
+        )
+        raise typer.Exit(2)
+    return cfg
+
+
+def _notice(message: str) -> None:
+    err.print(f"[yellow]{message}[/yellow]")
+
+
 def _show_counts(counts: dict[str, int]) -> None:
     table = Table(show_header=False, box=None)
     for key, value in counts.items():
@@ -110,10 +130,32 @@ def embed(
         typer.Option("--reset", help="Drop existing vectors first (use after a model change)"),
     ] = False,
 ) -> None:
-    """Embed segments for retrieval."""
-    cfg = _config(workdir)
-    counts = pipeline.embed(cfg, progress=_progress("embed"), reset=reset)
+    """Embed segments for retrieval.
+
+    Runs a local HuggingFace encoder by default. Set MASHUP_LOCAL_EMBED_MODEL
+    to pick another (`mashup models` lists them), or MASHUP_EMBED_BACKEND=gateway
+    to embed through the fleet gateway instead.
+    """
+    cfg = _config_for_embedding(workdir)
+    counts = pipeline.embed(cfg, progress=_progress("embed"), reset=reset, notice=_notice)
     _show_counts(counts)
+
+
+@app.command()
+def models() -> None:
+    """List the local embedding models this build knows about."""
+    from mashup.embedding import DEFAULT_LOCAL_MODEL, LOCAL_MODELS
+
+    table = Table(box=None)
+    table.add_column("alias")
+    table.add_column("repo")
+    table.add_column("dim", justify="right")
+    table.add_column("pooling")
+    for alias, spec in LOCAL_MODELS.items():
+        mark = " [green](default)[/green]" if alias == DEFAULT_LOCAL_MODEL else ""
+        table.add_row(alias + mark, spec.repo, str(spec.dim), spec.pooling)
+    console.print(table)
+    console.print("\n[dim]Any HuggingFace repo id also works (mean pooling assumed).[/dim]")
 
 
 @app.command()
@@ -127,6 +169,15 @@ def status(workdir: WORKDIR_OPT = None) -> None:
         raise typer.Exit(1)
     with Store(cfg.db_path) as store:
         _show_counts(store.counts())
+        # More than one line here means retrieval is comparing vectors from
+        # different models, which is silently meaningless.
+        used = store.embedding_models()
+        if used:
+            console.print()
+            for model, n in sorted(used.items()):
+                console.print(f"  {model or '[dim](model not recorded)[/dim]'}  {n}")
+            if len(used) > 1:
+                err.print("[red]Mixed embedding models — run `mashup embed --reset`.[/red]")
 
 
 # ---- planning -----------------------------------------------------------
@@ -148,7 +199,9 @@ def build(
     ] = False,
 ) -> None:
     """Plan mashup variants and render them."""
-    cfg = _config(workdir)
+    # Planning needs embeddings; the brief parser degrades to regex without a
+    # key, so with the local backend this runs entirely offline.
+    cfg = _config_for_embedding(workdir)
     target = parse_duration(prompt, duration)
     strategies = pipeline.AI_STRATEGIES[:variants]
 
@@ -246,7 +299,7 @@ def experiment(
     """Generate the five blind conditions for the validation experiment."""
     from mashup.experiment import run_experiment
 
-    cfg = _config(workdir)
+    cfg = _config_for_embedding(workdir)
     target = parse_duration(prompt, duration)
     blinds = run_experiment(prompt, cfg, outdir=output, target=target, seed=seed)
 
@@ -334,7 +387,7 @@ def main(
     err.print("[dim]enriching…[/dim]")
     pipeline.enrich(cfg, progress=_progress("enrich"))
     err.print("[dim]embedding…[/dim]")
-    pipeline.embed(cfg, progress=_progress("embed"))
+    pipeline.embed(cfg, progress=_progress("embed"), notice=_notice)
 
     target = parse_duration(prompt, duration)
     edls = pipeline.make_mashups(

@@ -182,6 +182,11 @@ class EDL(BaseModel):
     score: float = 0.0
     terms: ScoreTerms = Field(default_factory=ScoreTerms)
     weights: dict[str, float] = Field(default_factory=dict)
+    # Similarity thresholds this score was computed against. Recorded because
+    # they are measured from the candidate pool, so an editor rescoring later
+    # against the whole archive would otherwise silently use different cuts
+    # and report a score that cannot be compared with the one it replaced.
+    calibration: dict[str, float | str] = Field(default_factory=dict)
     # Human-readable reasons the planner made the choices it made.
     rationale: list[str] = Field(default_factory=list)
 

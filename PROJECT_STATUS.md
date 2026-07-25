@@ -34,6 +34,9 @@ content domain at a time (comedy is the target).
 - FFmpeg — `ffmpeg` and `ffprobe` on `PATH`. Burn-in subtitles additionally
   need a libass-enabled build.
 - Runtime packages: httpx, numpy, pydantic, python-dotenv, rich, tenacity, typer.
+- Local embeddings: the `local` extra (torch, transformers), also in the dev
+  group so `uv sync` gets a working default. `BAAI/bge-base-en-v1.5` from the
+  HuggingFace cache.
 - Optional transcription: installed `whisperkit-cli` with a local CoreML model
   (preferred) or the `transcribe` extra with mlx-whisper (Apple silicon only).
 - archive.org — source of the public-domain dev corpus (`ybylcollection`).
@@ -42,7 +45,8 @@ content domain at a time (comedy is the target).
 ### Internal
 
 - Fleet free-ai gateway (`https://ai-gateway.sassmaker.com`), OpenAI-compatible.
-  Chat and embeddings both route through it; this repo holds no provider keys.
+  Chat routes through it; this repo holds no provider keys. Embeddings default
+  to a local model, so only `enrich` needs the gateway.
 - `MASHUP_GATEWAY_API_KEY` — from the fleet Infisical `free-ai` project.
 
 ## Timeline
@@ -61,14 +65,21 @@ content domain at a time (comedy is the target).
   tokens before segmentation, and added direct backend/atomic-output tests.
   A five-minute archive slice froze WhisperKit chunking to `none`: VAD emitted
   49% duplicate cues versus 2% genuine audio repeats without chunking.
-- Next — run the pipeline end to end against the real Groucho archive, exercise
-  the editor against its real media, then run the blind comparison.
+- 2026-07-25 — first full end-to-end run against the real archive; five
+  conditions planned and rendered. See "First run" below.
+- 2026-07-25 — embeddings moved to a local HuggingFace encoder by default.
+  Swapping the model exposed three defects the gateway run had hidden: fixed
+  cosine thresholds fitted to one model's similarity scale, a callback term
+  that counted an archive's boilerplate as running gags, and a beam search
+  that preferred short sequences. See "Second run" below.
+- Next — exercise the editor against real media, then run the blind comparison.
 
 ## Products
 
 - `mashup` CLI (`uv run mashup`) — the whole pipeline. Subcommands: `ingest`,
-  `enrich`, `embed`, `status`, `build`, `preview`, `render`, `serve`; the bare
-  invocation `mashup --input … --prompt …` runs everything in one shot.
+  `enrich`, `embed`, `models`, `status`, `build`, `preview`, `render`, `serve`;
+  the bare invocation `mashup --input … --prompt …` runs everything in one
+  shot. With local embeddings only `enrich` needs a gateway key.
 - `mashup serve` — loopback-only local editor server (stdlib `http.server`)
   exposing the EDL, candidate search, segment detail and range-served media,
   and serving the built editor bundle from `web/dist`.
@@ -94,14 +105,23 @@ content domain at a time (comedy is the target).
 - **Gateway client** — defensive JSON parsing with a repair round-trip, batched
   embeddings with index-ordered reassembly, retries on transient status codes,
   and a content-addressed on-disk cache.
-- **Planning** — MMR retrieval; eight independently tested 0..1 scoring terms;
-  one shared beam search with per-strategy weight profiles; the chronological
-  ordering constraint; `duration_fit` excluded during search and restored for
-  final scoring; semantic and random baselines in the same machinery; brief
-  parsing into query plus ordered beats with a regex fallback.
+- **Embedding** — one `Embedder` protocol over a local HuggingFace encoder
+  (default) and the gateway; asymmetric query/document handling for the BGE
+  family; a bounded in-memory cache; per-vector model identity in the store so
+  a model change forces a re-embed instead of silently mixing vector spaces.
+- **Planning** — MMR retrieval plus entity expansion for the callback
+  strategy; eight independently tested 0..1 scoring terms with similarity
+  thresholds calibrated from the candidate pool's own distribution; one shared
+  beam search with per-strategy weight profiles; the chronological ordering
+  constraint with archive-order branch expansion; `duration_fit` excluded
+  during search and restored for final scoring, with full-length sequences
+  preferred over better-scoring short ones; semantic and random baselines in
+  the same machinery; brief parsing into query plus ordered beats with a regex
+  fallback that also covers the no-key case.
 - **EDL** — pretty-printed, key-sorted JSON carrying clips, score, all eight
-  term values, the weight profile and human-readable rationale; plus a
-  transcript preview for review without a video player.
+  term values, the weight profile, the calibrated thresholds and
+  human-readable rationale; plus a transcript preview for review without a
+  video player.
 - **Editor server** — loopback-only; EDL read/write with renumbering, rescoring
   and atomic writes; candidate search that degrades from embeddings to token
   overlap; segment detail with neighbours; range-served media behind a
@@ -132,19 +152,21 @@ content domain at a time (comedy is the target).
 
 ### Planned
 
-2. **Recruit five viewers and run the blind comparison.** The blind set is
-   generated and rendered in `experiment/` (A–E plus a withheld `KEY.json`
-   and a `ratings.csv` template). This is the only step that can actually
-   validate the thesis; everything below is a proxy for it.
-3. **Fix the callback strategy.** It scores 0.06 on its own objective while
-   chronological scores 0.25 by accident (see First run below). Either the
-   entity-overlap signal is too sparse on this archive, or the planner is
-   not weighting it hard enough to overcome duration and relevance pressure.
+2. **Regenerate the blind set and recruit five viewers.** The rendered set in
+   `experiment/` predates the calibration and callback fixes and must be
+   rebuilt before anyone watches it. Once rebuilt, this is the only step that
+   can actually validate the thesis; everything below is a proxy for it.
+3. `chronological` still finishes 325s against a 420s target (was 214s). The
+   `can_open` filter leaves only three valid seeds in a 40-clip pool, the
+   earliest at episode 3 of 20, which caps how much archive the monotonic
+   constraint can spend. Widening the seed set is the obvious next move —
+   `term_context_completeness` already penalises a bad opener, so the hard
+   filter may be redundant.
 4. Cross-archive validation. The kill criterion is explicitly cross-archive; a
    good Groucho result proves considerably less than it appears to.
-5. `chronological` finished 100s under a 420s target because the ordering
-   constraint exhausts valid candidates. Either widen the retrieval pool for
-   that strategy or let it relax the constraint rather than run short.
+5. **The callback strategy plans over a different pool than the other two.**
+   Necessary — MMR removes the material callbacks need — but a confound that
+   has to be reported alongside any blind-comparison result.
 
 ### Deferred / open questions
 
@@ -154,8 +176,14 @@ content domain at a time (comedy is the target).
    probably wants to tolerate one bad file and report it.
 7. `Config.media_dir` (`.mashup/media`) is created by `ensure_dirs` but nothing
    writes to it. Either give it a job or delete it.
-8. Scoring weights are hand-set priors, not learned. The experiment tests
-    them; the EDL term breakdown is what makes retuning tractable.
+8. Scoring weights are hand-set priors, not learned. The calibration
+    percentiles (p99, p25–p90, p25) are priors too. The experiment tests them;
+    the EDL term breakdown is what makes retuning tractable.
+9. `relevance` sits at 0.48–0.51 for every condition including random, so it
+    is currently doing no discriminating work. Either the retrieval pool is
+    already uniformly on-topic — plausible, since every candidate came from
+    the same query — or the term needs rescaling against the corpus the way
+    the thresholds now are.
 
 ### Blocked
 
@@ -195,23 +223,77 @@ five-viewer comparison is the actual test.
 
 Two honest negatives: the callback strategy scores 0.06 on callback while
 chronological scores 0.25 incidentally, and chronological ran 100s short of
-target.
+target. Both were diagnosed in the second run below — the first was the
+callback term measuring boilerplate rather than running gags, the second a
+search objective biased toward stopping early.
 
 Render verified: 6:50 output, valid h264/AAC, rebased sidecar SRT, and
 loudness at three points drawn from different source episodes measuring
 -15.6, -16.5 and -16.0 LUFS against a -16 target.
 
+## Second run (2026-07-25, local embeddings)
+
+Same prompt and archive, re-embedded with `BAAI/bge-base-en-v1.5`: **727
+segments in 9.4 seconds**, no key and no network, against four gateway passes
+before. `build` now runs offline too, since the brief parser falls back to
+regex without a key.
+
+The encoder swap is what made the next three defects visible. Each had been
+sitting in the first run's numbers looking like a healthy score.
+
+| | first run | second run |
+|---|---|---|
+| `non_repetition`, all conditions | 1.00 | 1.00 AI / 0.99 semantic |
+| `callback` — callback strategy | 0.06 | **0.15** |
+| `callback` — random control | 0.35 | **0.00** |
+| `chronological` duration | 320s | 325s |
+
+1. **Fixed cosine thresholds were fitted to one model.** bge-base puts 99.9%
+   of this archive's segment pairs below 0.841, so the hard-coded 0.82
+   redundancy cut fired on almost nothing and `non_repetition` returned 1.00
+   for every candidate sequence — a term that had stopped measuring anything.
+   Thresholds are now percentiles of the candidate pool's own distribution and
+   are recorded in the EDL.
+2. **The callback term was measuring noise.** It counted any shared entity,
+   including the host's name (96 segments) and the sponsor (48), and counted
+   repeats inside a single episode — which is the original conversation
+   continuing, not something the planner built. That is how the *random*
+   control was outscoring the callback strategy on callback.
+3. **The beam search preferred short sequences.** `relevance` and
+   `context_completeness` are means over clips, so every additional clip that
+   is merely good drags them down; `duration_fit`'s weight cannot offset it.
+   Full-length sequences are now preferred over better-scoring short ones, and
+   chronological branches in archive order rather than leaping to the most
+   relevant clip ahead of it.
+
+Current term breakdown, same prompt:
+
+| | relevance | context | progression | callback | duration_fit |
+|---|---|---|---|---|---|
+| chronological | 0.48 | 0.90 | 0.89 | 0.00 | 0.76 |
+| escalation | 0.50 | 0.60 | 0.92 | 0.00 | 0.99 |
+| callback | 0.50 | 0.75 | 0.91 | **0.15** | 0.96 |
+| semantic (baseline) | 0.51 | 0.45 | 0.85 | 0.00 | 0.98 |
+| random (control) | 0.50 | 0.33 | 0.62 | 0.00 | 0.99 |
+
+**Still the machine grading its own homework.** The separation on
+`context_completeness` and `progression` is where the design predicted it, and
+callback is now the only condition scoring on callback — but the planner
+optimises this objective, so none of it is evidence about what a viewer
+prefers. The blind comparison remains the only real test, and the rendered set
+in `experiment/` predates these fixes.
+
 ## Operational notes
 
-- The gateway falls back between embedding providers under sustained load.
-  `gemini-embedding-001` (3072d) cannot serve 727 segments; the run is pinned
-  to `@cf/baai/bge-large-en-v1.5` (1024d) via `MASHUP_EMBED_MODEL`. Mixing is
-  now rejected rather than silently corrupting retrieval.
+- Embeddings default to local; only `enrich` needs the gateway. Run it under
+  `infisical run --silent --command '...'` with
+  `MASHUP_GATEWAY_API_KEY="$Free_ai"`.
+- The gateway falls back between embedding providers under sustained load,
+  which is why the first run had to be pinned to `@cf/baai/bge-large-en-v1.5`
+  and why vectors now carry the model that produced them.
 - Enrichment needed four passes to drain: batches fail on gateway routing
   errors, and each pass retries only what is still missing, hitting the disk
   cache for everything already done.
-- Run everything under `infisical run --silent --command '...'` with
-  `MASHUP_GATEWAY_API_KEY="$Free_ai"`.
 
 ## Corpus (prepared 2026-07-25)
 

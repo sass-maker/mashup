@@ -395,6 +395,10 @@ def run(tmp_path_factory: pytest.TempPathFactory):
         chat_model="stub-chat",
         embed_model="stub-embed",
         workdir=root / "work",
+        # Route embeddings through StubGateway rather than the default local
+        # encoder: this suite is about pipeline wiring, and it must stay both
+        # hermetic and free of a torch import.
+        embed_backend="gateway",
     )
 
     with pytest.MonkeyPatch.context() as mp:

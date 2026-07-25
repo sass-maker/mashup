@@ -97,8 +97,14 @@ def plan(
     # Seed: openers only, when the archive offers any.
     openers = [s for s in pool if s.meta.can_open] or pool
     if chronological:
-        openers = sorted(openers, key=lambda s: _chronological_key(s, ctx.source_ordinals))
-    seeds = sorted(openers, key=lambda s: ctx.relevance_of(s), reverse=True)[:branch]
+        # Seeding on relevance alone routinely started in the back half of the
+        # archive, and the monotonic constraint then starves the search — it
+        # can only walk forward through whatever little remains. Observed
+        # opening at episode 6 of 20 and running 211s against a 420s target.
+        # Starting at the front is also simply what "chronological" means.
+        seeds = sorted(openers, key=lambda s: _chronological_key(s, ctx.source_ordinals))[:branch]
+    else:
+        seeds = sorted(openers, key=lambda s: ctx.relevance_of(s), reverse=True)[:branch]
     beams = [
         _Beam(seq=(s,), duration=s.duration, score=partial_score((s,)))
         for s in seeds
@@ -134,8 +140,19 @@ def plan(
                 finished.append(beam)
                 continue
 
-            # Cheap pre-rank keeps the expensive full scoring to `branch` items.
-            options.sort(key=ctx.relevance_of, reverse=True)
+            # Cheap pre-rank keeps the expensive full scoring to `branch`
+            # items. For chronological the pre-rank has to be archive order,
+            # not relevance: ranking by relevance offers the beam the best
+            # clips anywhere ahead of it, it leaps to them, and the monotonic
+            # constraint then discards everything skipped over. Measured, that
+            # capped the search at 348s of a 420s target no matter how large
+            # the candidate pool grew. Walking to the nearest forward clips
+            # keeps the remaining archive spendable; the objective still
+            # chooses between them.
+            if chronological:
+                options.sort(key=lambda s: _chronological_key(s, ctx.source_ordinals))
+            else:
+                options.sort(key=ctx.relevance_of, reverse=True)
             for seg in options[:branch]:
                 seq = (*beam.seq, seg)
                 nxt.append(
@@ -162,14 +179,30 @@ def plan(
         scored.append((s, terms, beam))
 
     scored.sort(key=lambda x: x[0], reverse=True)
-    best_score, best_terms, best_beam = scored[0]
+
+    # Prefer any sequence that reaches the requested length over a
+    # better-scoring short one. `relevance` and `context_completeness` are
+    # means over clips, so every extra clip that is merely good rather than
+    # excellent drags them down: the objective has a standing bias toward
+    # stopping early, and duration_fit's weight is far too small to offset it.
+    # Left alone, `chronological` returned 214s against a 420s target and
+    # still outscored the full-length variants.
+    floor = target * (1 - DURATION_TOLERANCE)
+    in_band = [row for row in scored if row[2].duration >= floor]
+    best_score, best_terms, best_beam = (in_band or scored)[0]
+
     seq = list(best_beam.seq)
+    rationale = _rationale(strategy, seq, best_terms, ctx)
+    if not in_band:
+        rationale.append(
+            f"ran short: no sequence reached {floor:.0f}s, so the pool is the binding constraint"
+        )
     return PlanResult(
         strategy=strategy,
         sequence=seq,
         terms=best_terms,
         score=best_score,
-        rationale=_rationale(strategy, seq, best_terms, ctx),
+        rationale=rationale,
     )
 
 
