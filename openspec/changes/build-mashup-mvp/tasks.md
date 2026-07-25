@@ -58,21 +58,20 @@
 - [x] ffmpeg-gated render smoke test
 - [x] Offline end-to-end integration test with a stubbed gateway
 - [x] CI workflow on the Python toolchain plus a `web` build job
-- [ ] End-to-end run on a real archive with real transcripts
 
 ## Open questions
-- [ ] `Source.recorded_at` is unset; ordinals proxy chronology. Does a
+- `Source.recorded_at` is unset; ordinals proxy chronology. Does a
       filename date convention need parsing for real creator archives?
-- [ ] `ingest_archive` raises on the first unreadable file. Should a real
+- `ingest_archive` raises on the first unreadable file. Should a real
       archive tolerate one bad file and report it instead?
-- [ ] The EDL stores `weights` and `terms` but not the query vector or parsed
+- The EDL stores `weights` and `terms` but not the query vector or parsed
       beats, so the editor can only fully rescore after re-deriving them from
       the gateway. Persist the query embedding in the EDL?
-- [ ] `Clip.transition` is per-clip in the model but `render()` takes one
+- `Clip.transition` is per-clip in the model but `render()` takes one
       global crossfade. Either honour it per-clip or mark it advisory.
-- [ ] Sidecar SRT timings are apportioned by character count because `Clip`
+- Sidecar SRT timings are apportioned by character count because `Clip`
       carries text without internal cue timings. Carry cue timings into the
       clip for frame-accurate subtitles.
-- [ ] `Config.media_dir` is created but never written to — dead, remove.
-- [ ] `subtitles="burn"` needs an ffmpeg built with libass; the local
+- `Config.media_dir` is created but never written to — dead, remove.
+- `subtitles="burn"` needs an ffmpeg built with libass; the local
       Homebrew build has none, so it fails fast. Document or vendor.
