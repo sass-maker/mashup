@@ -233,6 +233,16 @@ downscales the entire render.
 
 ### In progress
 
+0. **Build a proper corpus.** Current focus. Twenty episodes of one quiz show
+   is the easy case and not the goal: one host, one format, one audio chain,
+   and ~40-second interchangeable vignettes with no through-line for a planner
+   to build on. If ordering effects are imperceptible on this material, every
+   experiment returns null for reasons that have nothing to do with the
+   software. A corpus is fit for purpose here when ordering *can* matter
+   (setup/payoff, energy range, thematic build), sources are genuinely
+   heterogeneous, licences are clean, and several briefs clear the noise floor
+   — which `mashup coverage` now measures directly.
+
 1. **Watch the output.** Nobody has watched a generated mashup and said whether
    it is any good. `study/matched-couples/A.mp4` and `B.mp4` are 6:39 each,
    identical clips in different orders. Two questions, in order of importance:
@@ -269,6 +279,43 @@ downscales the entire render.
    EDL with real media.
 
 ### Deferred / open questions
+
+**A. Per-clip source labels (wanted, blocked on a build).** Mashing unrelated
+videos together should mark each clip with where it came from — a white
+lower-third for the first few seconds of each cut. It is also the mechanism
+that would discharge CC-BY attribution on-screen rather than in a description.
+Blocked: the installed ffmpeg (Homebrew 8.1.2) is built without
+`libfreetype`/`libass`/`fontconfig`, so `drawtext` does not exist. `overlay`
+does, so the alternatives are a fuller ffmpeg or rendering label images in
+Python. Both need a decision; neither is started.
+
+**B. The same missing build options break `--subtitles burn`.** Burn-in needs
+the `subtitles` filter, which needs libass. The dependency is already noted
+under External, but nothing checks for it at runtime — the option is accepted
+and fails inside ffmpeg. Should be detected up front with a clear message.
+
+**C. Retention-driven iteration (later, once output is worth publishing).**
+Rather than asking viewers where a cut sags, instrument playback: a retention
+curve gives a reading every few seconds, and each drop-off maps to a timestamp
+→ clip → segment id → its eight scores. That is the labelled data the objective
+has never had. YouTube is the eventual home for this once there is an audience,
+but it is the wrong *development* loop — retention is dominated by thumbnail,
+title, first fifteen seconds and traffic source, it needs views to be
+non-noisy, and YouTube will not randomise viewers across two different videos.
+The cheap first version is position logging in `mashup serve`, which already
+range-serves the media. Matched pairs supply the baseline a retention curve
+otherwise lacks: same clips, different order, compare the two curves at clip
+boundaries.
+
+**D. Sourcing is constrained by licence, not by attribution.** Crediting a
+source discharges a CC-BY condition; it does not create a licence, and it is
+not a fair-use factor. Content ID matches automatically regardless of credits,
+and compilations sit at the weak end of fair use because they substitute for
+the original. So the corpus has to be public domain, CC0, or CC-BY — which
+`scripts/fetch_archive.py` already enforces, rejecting `-nd` and anything
+unrecognised. YouTube's Creative Commons filter is a legitimate route to
+"a bunch of different YouTube videos" and is the natural extension of that
+gate. See [`scripts/README.md`](scripts/README.md#licence-position).
 
 5. `Source.recorded_at` is never populated; ordinals proxy chronology. Real
    creator archives may need a filename date convention parsed.
