@@ -1,6 +1,6 @@
 # mashup — PROJECT STATUS
 
-Last updated: 2026-07-25
+Last updated: 2026-07-26
 
 ## Why / What
 
@@ -83,14 +83,52 @@ content domain at a time (comedy is the target).
 - 2026-07-26 — verifying that set before recruiting viewers found two design
   faults: an uncounterbalanced viewing order, and a 122s duration spread that
   leaked the blinding. Both addressed; set regenerated at `--pool 160` as
-  `study/localchat-2026-07-26-pool160`. See "Blind set" below.
-- Next — exercise the editor against real media, then run the five-viewer blind
-  comparison without opening `KEY.json`.
+  `study/localchat-2026-07-26-pool160`.
+- 2026-07-26 — **that set was measuring noise.** The archive holds no airline
+  material, and the flat `relevance` term had been reporting it for three runs.
+  Added a measured coverage gate. Separately, the five conditions turned out to
+  share 0–5% of their clips, so the design could not attribute a preference to
+  sequencing at all; added a matched-pair design that can. See "Feasibility
+  audit" below.
+- Next — rate the matched pair at `study/matched-couples` with six viewers.
+
+## Feasibility audit (2026-07-26)
+
+Four mechanical tests of the central claim, run before spending human hours.
+Scripts were throwaway; the findings that survived are now in code and tests.
+
+**1. The study prompt had no material behind it.** Nonsense text scores 0.434
+against this archive over its ten best matches. `"seven minutes on airline
+travel"` scored 0.459 — a lift of +0.024, with three supporting segments in
+twenty episodes. `"quantum chromodynamics"` scored higher. The blind set at
+`study/localchat-2026-07-26-pool160` is therefore **void**: it asks five people
+to rank five piles of off-topic clips. Fixed by `mashup coverage`, which
+measures the floor instead of assuming one, and which `experiment` now enforces.
+
+**2. The five conditions do not share clips**, so the design cannot test
+sequencing. Jaccard between the chronological cut and the other four: 0.00–0.05.
+Fixed by `mashup experiment --matched` — one clip set, two orders.
+
+**3. The scores were mostly made of constants.** Four of eight terms varied by
+under 0.10 across all five conditions, supplying 45–67% of each AI score and
+100% of both baseline scores. The baselines' weight profile is 100%
+order-blind, so the 0.742-vs-0.535 headline was never evidence about ordering.
+
+**4. The ordering machinery itself works.** Against 1000 shuffles of its own
+clips, the planner's order sat at the 99.4th / 99.9th / 100th percentile for
+the three AI strategies. This is the one clearly positive result: the beam
+search is optimising order, not dressing up a retrieval result.
+
+Building the matched pair immediately exposed a latent bug — `plan` charged a
+6% unfinished-ending penalty and `rescore` did not, so any rescored timeline
+(including every human edit) was silently inflated. Now shared via
+`ending_penalty`.
 
 ## Products
 
 - `mashup` CLI (`uv run mashup`) — the whole pipeline. Subcommands: `ingest`,
-  `enrich`, `embed`, `models`, `status`, `build`, `preview`, `render`, `serve`;
+  `enrich`, `embed`, `models`, `status`, `coverage`, `build`, `preview`,
+  `render`, `serve`, `experiment`, `evaluate`, `churn`;
   the bare invocation `mashup --input … --prompt …` runs everything in one
   shot. On Apple silicon no subcommand needs a gateway key.
 - `mashup serve` — loopback-only local editor server (stdlib `http.server`)
@@ -166,10 +204,16 @@ content domain at a time (comedy is the target).
 
 ### Planned
 
-2. **Recruit five viewers.** The corrected fully local blind set is ready in
-   `study/localchat-2026-07-26`; keep `KEY.json` withheld, collect the supplied
-   ratings sheet, then run `mashup evaluate`. This is the only step that can
-   actually validate the thesis; everything below is a proxy for it.
+2. **Rate the matched pair.** `study/matched-couples` — prompt "how couples met
+   and got married", escalation at the default pool 40, two arms of 399.002s
+   each. The planner's order beats 100% of 200 arbitrary orders of the same
+   clips, so the objective is confidently ahead going in. Six viewers, `KEY.json`
+   withheld, hand over the `.mp4` files only, then `mashup evaluate`. This is
+   the only step that can validate the sequencing claim; everything below is a
+   proxy for it.
+3. **Regenerate the five-condition set on a supported brief.** The existing one
+   is void (see Feasibility audit). It measures the pipeline end to end rather
+   than sequencing, so it is worth having, but second in line.
 3. Cross-archive validation. The kill criterion is explicitly cross-archive; a
    good Groucho result proves considerably less than it appears to.
 4. **The callback strategy plans over a different pool than the other two.**
@@ -187,11 +231,27 @@ content domain at a time (comedy is the target).
 8. Scoring weights are hand-set priors, not learned. The calibration
     percentiles (p99, p25–p90, p25) are priors too. The experiment tests them;
     the EDL term breakdown is what makes retuning tractable.
-9. `relevance` sits at 0.48–0.51 for every condition including random, so it
-    is currently doing no discriminating work. Either the retrieval pool is
-    already uniformly on-topic — plausible, since every candidate came from
-    the same query — or the term needs rescaling against the corpus the way
-    the thresholds now are.
+9. **`relevance` is uncalibrated, and now diagnosed.** It sat at 0.41–0.46 for
+    every condition including random across three runs. The cause was not the
+    pool being uniformly on-topic: nonsense text scores 0.434 on this corpus,
+    so the term reports raw cosine in a band whose floor is 0.43 and whose
+    realistic ceiling is ~0.70. It should be rescaled against the measured
+    floor the way `redundancy` and `flow` already are against corpus
+    percentiles. **Not done** — unlike the coverage gate, this changes what the
+    planner optimises and would move selections, so it wants a deliberate
+    decision rather than a third unannounced scoring change.
+10. **`non_repetition` reads ~1.00 for all five conditions** including random,
+    because p99 calibration puts the cut at 0.843 and almost no pair reaches
+    it. Same class of defect as above, same reason it is still open.
+11. **`term_callback` is 25% a constant role check** (`lands`), so a strategy
+    that ignores callbacks can score 0.25 on the term. On one prompt at pool
+    160 the chronological cut scored 0.25 against the callback strategy's 0.06.
+    The term needs rebalancing; deferred with the other two so all three
+    scoring changes can be made and re-measured together.
+12. **`can_end` is true for only 18.6% of segments** (`can_open`, 14.0%). The
+    6% unfinished-ending penalty therefore applies to roughly four sequences in
+    five and behaves more like a lottery on which clip lands last than like a
+    judgement. Worth checking against a human before it is trusted.
 
 ### Blocked
 
@@ -354,7 +414,13 @@ sidecars and EDLs to `study/localchat-2026-07-26`. Durations span 326–450
 seconds and every file is non-empty. `KEY.json` remains withheld; this proves
 the real-archive machinery, not viewer preference.
 
-## Blind set: ready to rate (`study/localchat-2026-07-26-pool160`)
+## Blind set: VOID (`study/localchat-2026-07-26-pool160`)
+
+**Do not rate this set.** Its prompt, "seven minutes on airline travel", is
+indistinguishable from nonsense against this archive (+0.024 lift, three
+supporting segments). See "Feasibility audit" above. Kept on disk because the
+duration and counterbalancing work below is still correct and still applies to
+the replacement.
 
 Prompt "seven minutes on airline travel", seed 0, `--pool 160`. All five
 render correctly — h264 + aac, 472×360, sidecar SRTs, MP4 durations matching

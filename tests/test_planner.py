@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 from conftest import make_segment, unit_vec
 
 from mashup.models import Role
-from mashup.plan.planner import plan, plan_random, plan_semantic, rescore
+from mashup.plan.planner import (
+    UNFINISHED_PENALTY,
+    ending_penalty,
+    plan,
+    plan_random,
+    plan_semantic,
+    rescore,
+)
 from mashup.plan.score import PlanContext
 from mashup.retrieve import Candidate
 
@@ -123,6 +132,43 @@ def test_rescore_reflects_an_edit(cosine_sim):
     trimmed.sequence = result.sequence[:2]
     after = rescore(trimmed, c, cosine_sim)
     assert after.score != pytest.approx(result.score)
+
+
+def test_rescore_charges_the_same_ending_penalty_as_plan(cosine_sim):
+    """`plan` used to apply the unfinished-ending penalty and `rescore` not
+    to, so the same clips scored 6% higher whenever they came back through
+    rescore. The matched-pair experiment compares one clip set in two orders
+    across exactly those two functions, and the gap alone was enough to make
+    an arbitrary shuffle outrank the planner's own output."""
+    c = ctx()
+    planned = plan("escalation", build_pool(), c, cosine_sim)
+    assert rescore(planned, c, cosine_sim).score == pytest.approx(planned.score)
+
+
+def test_the_ending_penalty_is_the_only_gap_between_two_identical_orders(cosine_sim):
+    """Two sequences with the same clips in the same order, differing only in
+    whether the last clip is flagged `can_end`, must differ by exactly the
+    penalty. This is what makes a matched pair's two arms comparable."""
+    c = ctx()
+    closer = make_segment("z", source_id="ep03", angle=0.05, can_end=True)
+    opener = make_segment("z", source_id="ep03", angle=0.05, can_end=False)
+    body = [s.segment for s in build_pool()[:3]]
+
+    base = plan("escalation", build_pool(), c, cosine_sim)
+    ends_well = rescore(replace(base, sequence=[*body, closer]), c, cosine_sim)
+    ends_badly = rescore(replace(base, sequence=[*body, opener]), c, cosine_sim)
+
+    # Same clips, same order, same terms — only the ending flag differs.
+    assert ends_badly.terms == ends_well.terms
+    assert ends_badly.score == pytest.approx(ends_well.score * UNFINISHED_PENALTY)
+
+
+def test_ending_penalty_is_only_charged_when_the_clip_cannot_end():
+    can = make_segment("yes", can_end=True)
+    cannot = make_segment("no", can_end=False)
+    assert ending_penalty([can]) == 1.0
+    assert ending_penalty([cannot]) == UNFINISHED_PENALTY
+    assert ending_penalty([]) == 1.0
 
 
 def test_rationale_is_populated(cosine_sim):

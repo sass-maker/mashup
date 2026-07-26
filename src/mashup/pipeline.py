@@ -7,6 +7,10 @@ for twice while iterating on the cheap one (planning).
 
 from __future__ import annotations
 
+import random
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -16,11 +20,17 @@ from mashup.embedding import make_embedder
 from mashup.gateway import Gateway
 from mashup.ingest import ingest_archive
 from mashup.models import EDL, Clip, Segment, Source
-from mashup.plan.planner import PlanResult, plan, plan_random, plan_semantic
+from mashup.plan.planner import PlanResult, plan, plan_random, plan_semantic, rescore
 from mashup.plan.prompt import MashupRequest, parse_request
 from mashup.plan.score import Calibration, PlanContext, prepare_context
 from mashup.render.boundaries import detect_silences, snap_boundaries
-from mashup.retrieve import Retriever, embed_segments
+from mashup.retrieve import (
+    Candidate,
+    Coverage,
+    Retriever,
+    embed_segments,
+    nonsense_probes,
+)
 from mashup.segment.enrich import enrich_segments
 from mashup.segment.splitter import split_source
 from mashup.store import Store
@@ -182,18 +192,30 @@ def result_to_edl(
     )
 
 
-def make_mashups(
-    prompt: str,
-    cfg: Config,
-    *,
-    target: float,
-    strategies: tuple[str, ...] = AI_STRATEGIES,
-    include_baselines: bool = False,
-    pool: int = DEFAULT_POOL,
-    snap: bool = True,
-    crossfade: float = 0.0,
-) -> list[EDL]:
-    """Plan one EDL per strategy from an already-enriched archive."""
+@dataclass
+class _Planning:
+    """Everything the planners share, built once per run."""
+
+    store: Store
+    request: MashupRequest
+    ctx: PlanContext
+    retriever: Retriever
+    candidates: list[Candidate]
+    baseline_candidates: list[Candidate]
+    callback_pool: list[Candidate]
+    coverage: Coverage
+
+    def pool_for(self, strategy: str) -> list[Candidate]:
+        return self.callback_pool if strategy == "callback" else self.candidates
+
+
+@contextmanager
+def _planning_session(prompt: str, cfg: Config, *, target: float, pool: int) -> Iterator[_Planning]:
+    """Open the store, embed the brief, retrieve, and calibrate.
+
+    Shared by every entry point that plans, so a matched-set run and a
+    five-condition run cannot drift apart in how they set the objective up.
+    """
     # Local planning does not need chat. Without a key, use the deterministic
     # brief parser instead of constructing a doomed bearer-auth request.
     gw = Gateway(cfg) if cfg.gateway_api_key else None
@@ -245,19 +267,54 @@ def make_mashups(
         callback_pool = retriever.entity_expansion(
             candidates, query_vec, common=ctx.common_entities
         )
-        pools = {s: (callback_pool if s == "callback" else candidates) for s in strategies}
+        yield _Planning(
+            store=store,
+            request=request,
+            ctx=ctx,
+            retriever=retriever,
+            candidates=candidates,
+            baseline_candidates=baseline_candidates,
+            callback_pool=callback_pool,
+            coverage=retriever.coverage(query_vec, embed_query(nonsense_probes())),
+        )
 
-        results = [plan(s, pools[s], ctx, retriever.pairwise) for s in strategies]
+
+def check_coverage(prompt: str, cfg: Config) -> Coverage:
+    """Whether the archive holds material on this topic at all.
+
+    Cheap relative to planning, and worth running first: a brief the archive
+    cannot serve still produces five confident-looking variants, all of them
+    built from clips no better matched than random text would have found.
+    """
+    with _planning_session(prompt, cfg, target=1.0, pool=1) as session:
+        return session.coverage
+
+
+def make_mashups(
+    prompt: str,
+    cfg: Config,
+    *,
+    target: float,
+    strategies: tuple[str, ...] = AI_STRATEGIES,
+    include_baselines: bool = False,
+    pool: int = DEFAULT_POOL,
+    snap: bool = True,
+    crossfade: float = 0.0,
+) -> list[EDL]:
+    """Plan one EDL per strategy from an already-enriched archive."""
+    with _planning_session(prompt, cfg, target=target, pool=pool) as session:
+        ctx, retriever = session.ctx, session.retriever
+        results = [plan(s, session.pool_for(s), ctx, retriever.pairwise) for s in strategies]
         if include_baselines:
-            results.append(plan_semantic(baseline_candidates, ctx, retriever.pairwise))
-            results.append(plan_random(baseline_candidates, ctx, retriever.pairwise))
+            results.append(plan_semantic(session.baseline_candidates, ctx, retriever.pairwise))
+            results.append(plan_random(session.baseline_candidates, ctx, retriever.pairwise))
 
         return [
             result_to_edl(
                 r,
-                request,
+                session.request,
                 cfg,
-                store,
+                session.store,
                 target=target,
                 snap=snap,
                 crossfade=crossfade,
@@ -265,3 +322,108 @@ def make_mashups(
             )
             for r in results
         ]
+
+
+# The two orders compared when sequencing is tested on its own.
+MATCHED_ARMS = ("planned", "shuffled")
+# Shuffles drawn to characterise "an arbitrary order" before one is chosen.
+MATCHED_SHUFFLES = 200
+
+
+@dataclass
+class MatchedPair:
+    """The two arms plus where each sits among arbitrary orders."""
+
+    planned: EDL
+    shuffled: EDL
+    stats: dict[str, float | int]
+
+    def __getitem__(self, arm: str) -> EDL:
+        return {"planned": self.planned, "shuffled": self.shuffled}[arm]
+
+
+def make_matched_pair(
+    prompt: str,
+    cfg: Config,
+    *,
+    target: float,
+    strategy: str = "escalation",
+    pool: int = DEFAULT_POOL,
+    seed: int = 0,
+    snap: bool = True,
+    crossfade: float = 0.0,
+    shuffles: int = MATCHED_SHUFFLES,
+) -> MatchedPair:
+    """One clip set, two orders — the isolation test for sequencing.
+
+    The five-condition experiment compares variants built from *different*
+    clips: measured on the dev archive, chronological shared 0-5% of its
+    material with the other four. A viewer preferring it there says nothing
+    about ordering, because selection is confounded with it.
+
+    This holds the clips fixed and varies only their order, so a preference
+    is attributable to sequencing and nothing else. Both arms are scored
+    under the same weight profile, so their scores are directly comparable —
+    unlike the five-condition run, where the baselines use a profile that
+    cannot see order at all.
+
+    The shuffled arm is the *median* of many draws rather than the first one,
+    because a single draw is a lottery on a large discrete bonus. Only 19% of
+    this archive's segments are marked `can_end`, so most orders take the
+    unfinished-ending penalty and a few do not; the first seed tried landed a
+    shuffle in the top 14% purely by ending well, which would have handed
+    viewers a comparator that is not arbitrary at all. Picking the median
+    keeps the comparator random but typical. It does mean the objective
+    chooses which random order is representative — if the objective is wrong
+    about endings, so is that choice, which is why both percentiles are
+    recorded rather than just the winner.
+    """
+    with _planning_session(prompt, cfg, target=target, pool=pool) as session:
+        ctx, retriever = session.ctx, session.retriever
+        planned = plan(strategy, session.pool_for(strategy), ctx, retriever.pairwise)
+
+        def reorder(seq: list[Segment], note: str) -> PlanResult:
+            # Rescore rather than copy: an arm's recorded terms have to
+            # describe the order it is actually in, or the EDL lies about
+            # itself. `rescore` applies the same ending penalty `plan` does,
+            # so the two arms are on one scale.
+            return rescore(
+                replace(planned, sequence=seq, rationale=[note]), ctx, retriever.pairwise
+            )
+
+        rng = random.Random(seed)
+        draws: list[PlanResult] = []
+        for _ in range(shuffles):
+            seq = list(planned.sequence)
+            rng.shuffle(seq)
+            draws.append(reorder(seq, "same clips, arbitrary order"))
+        draws.sort(key=lambda r: r.score)
+        shuffled = draws[len(draws) // 2]
+
+        scores = [r.score for r in draws]
+        below = sum(1 for s in scores if s < planned.score)
+        stats = {
+            "shuffles": len(draws),
+            "planned_score": round(planned.score, 4),
+            "shuffled_score": round(shuffled.score, 4),
+            "planned_percentile": round(100 * below / len(draws), 1),
+            "shuffle_min": round(min(scores), 4),
+            "shuffle_max": round(max(scores), 4),
+        }
+
+        return MatchedPair(
+            **{
+                arm: result_to_edl(
+                    result,
+                    session.request,
+                    cfg,
+                    session.store,
+                    target=target,
+                    snap=snap,
+                    crossfade=crossfade,
+                    calibration=ctx.calibration,
+                )
+                for arm, result in zip(MATCHED_ARMS, (planned, shuffled), strict=True)
+            },
+            stats=stats,
+        )

@@ -24,9 +24,13 @@ sequencing actually beats retrieve-and-join.
   its own candidate pool, and what diffing a weak model against a strong one
   revealed about the enrichment prompt.
 - [experiment.md](experiment.md) — how to run the five-condition blind
-  comparison: the withheld key, the rating sheet, the success criteria and the
-  kill criterion with their real thresholds, and how `timeline_churn` measures
-  the latter.
+  comparison: the coverage gate, the withheld key, the rating sheet, the
+  success criteria and the kill criterion with their real thresholds, and how
+  `timeline_churn` measures the latter.
+- [experiment-matched.md](experiment-matched.md) — the two-arm design that
+  isolates sequencing by holding the clip set fixed, why its comparator is the
+  median shuffle, and why six viewers can only reach significance at
+  unanimity.
 
 ## Specification
 

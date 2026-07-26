@@ -21,6 +21,22 @@ attributable to the objective rather than to uneven tuning. See
 [`docs/experiment.md`](docs/experiment.md) for the conditions, the success
 criteria and the kill criterion.
 
+Comparing those five measures the pipeline end to end — they are built from
+different clips, so a preference among them cannot be pinned on ordering.
+[`mashup experiment --matched`](docs/experiment-matched.md) is the design that
+can: one clip set, two orders, nothing else varying.
+
+Before either, check the archive can serve the brief at all:
+
+```bash
+uv run mashup coverage --prompt "how couples met and got married"
+```
+
+Similarity from an asymmetric encoder never approaches zero — nonsense text
+scores 0.43 against the dev archive — so a topic the archive does not cover
+still yields confident-looking clips. `coverage` measures that floor and
+reports the brief's lift over it.
+
 ## Install
 
 Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), and FFmpeg

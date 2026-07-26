@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import random
+import string
 from collections import Counter
 from dataclasses import dataclass
 
@@ -76,6 +78,88 @@ class Candidate:
     relevance: float
 
 
+# ---- does the archive hold anything on this topic? ----------------------
+
+# Cosine from an asymmetric embedding model has a floor far above zero:
+# meaningless text still scores ~0.43 against this archive, because the model
+# maps everything into a narrow cone. Judging "is there material on this
+# topic" against a hand-picked cosine is therefore meaningless, so the floor
+# is measured instead — embed nonsense, see what it earns for free, and ask
+# how far a real query clears it.
+NONSENSE_PROBES = 24
+NONSENSE_SEED = 7
+COVERAGE_TOP_K = 10
+
+# Measured on the 727-segment dev archive with bge-base. Nonsense averages
+# 0.434 over its ten best matches. Prompts the archive genuinely serves land
+# 0.09-0.26 above that; "seven minutes on airline travel" — a topic with three
+# supporting segments in twenty episodes — reached 0.024, and "growing up and
+# school days" 0.049. The line sits between those two. It is drawn from one
+# archive and one encoder, so treat a near-miss as "look at the clips", not as
+# a verdict.
+MIN_LIFT = 0.06
+
+
+def nonsense_probes(n: int = NONSENSE_PROBES, seed: int = NONSENSE_SEED) -> list[str]:
+    """Deterministic junk queries used to measure the no-information floor.
+
+    Word-shaped rather than raw noise so the tokenizer splits them roughly the
+    way it splits real prompts; a wall of punctuation would measure the
+    tokenizer instead of the embedding space.
+    """
+    rng = random.Random(seed)
+    out = []
+    for _ in range(n):
+        out.append(
+            " ".join(
+                "".join(rng.choice(string.ascii_lowercase) for _ in range(rng.randint(4, 9)))
+                for _ in range(rng.randint(3, 7))
+            )
+        )
+    return out
+
+
+@dataclass(frozen=True)
+class Coverage:
+    """How much better than nothing a query does against this archive."""
+
+    top_k_mean: float  # mean similarity of the k best matches
+    floor: float  # what nonsense achieves on the same measure
+    ceiling: float  # the best any single nonsense probe managed
+    supporting: int  # segments scoring above that ceiling
+    top_k: int
+
+    @property
+    def lift(self) -> float:
+        return self.top_k_mean - self.floor
+
+    @property
+    def viable(self) -> bool:
+        return self.lift >= MIN_LIFT
+
+    def as_dict(self) -> dict[str, float | int | bool]:
+        return {
+            "top_k_mean": round(self.top_k_mean, 4),
+            "floor": round(self.floor, 4),
+            "lift": round(self.lift, 4),
+            "supporting": self.supporting,
+            "viable": self.viable,
+        }
+
+    def explain(self) -> str:
+        if self.viable:
+            return (
+                f"{self.supporting} segments clear the noise floor "
+                f"(lift {self.lift:+.3f} over nonsense)"
+            )
+        return (
+            f"only {self.supporting} segments clear the noise floor and the top "
+            f"{self.top_k} average {self.lift:+.3f} above what meaningless text scores. "
+            f"This archive has little or nothing on this topic, so every variant "
+            f"will be built from near-arbitrary clips."
+        )
+
+
 class Retriever:
     """Holds the normalised segment matrix so repeated planning is cheap."""
 
@@ -88,6 +172,41 @@ class Retriever:
 
     def similarity_to(self, query_vec: list[float]) -> np.ndarray:
         return self.matrix @ _unit(query_vec)
+
+    def coverage(
+        self,
+        query_vec: list[float],
+        floor_vecs: list[list[float]],
+        *,
+        top_k: int = COVERAGE_TOP_K,
+    ) -> Coverage:
+        """Compare a query against what nonsense scores on this archive.
+
+        `floor_vecs` are `nonsense_probes` embedded by the same model on the
+        same side of the query/document asymmetry — the floor is a property of
+        the encoder and the corpus together, so it cannot be cached across
+        either.
+        """
+
+        def top_mean(vec: list[float]) -> float:
+            sims = self.similarity_to(vec)
+            k = min(top_k, len(sims))
+            return float(np.sort(sims)[-k:].mean())
+
+        if not floor_vecs:
+            raise ValueError("coverage needs nonsense probes to measure the floor against")
+        floors = [top_mean(v) for v in floor_vecs]
+        # The ceiling, not the mean, is what a segment must beat to count as
+        # supporting: it is the luckiest score meaningless text achieved here.
+        ceiling = max(float(np.percentile(self.similarity_to(v), 99.0)) for v in floor_vecs)
+        sims = self.similarity_to(query_vec)
+        return Coverage(
+            top_k_mean=top_mean(query_vec),
+            floor=float(np.mean(floors)),
+            ceiling=ceiling,
+            supporting=int((sims > ceiling).sum()),
+            top_k=min(top_k, len(sims)),
+        )
 
     def pairwise(self, a: Segment, b: Segment) -> float:
         ia, ib = self._index[a.id], self._index[b.id]

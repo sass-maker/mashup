@@ -31,6 +31,26 @@ SimFn = Callable[[Segment, Segment], float]
 DURATION_TOLERANCE = 0.06
 # Never overshoot the target by more than this.
 DURATION_CEILING = 1.10
+# A set that stops on a clip the model says cannot end feels unfinished.
+UNFINISHED_PENALTY = 0.94
+
+
+def ending_penalty(seq: list[Segment]) -> float:
+    """Multiplier for stopping somewhere the model says is not an ending.
+
+    Shared by `plan` and `rescore` rather than living inside the search. It
+    used to be applied only when planning, so any sequence scored afterwards —
+    a human edit, or the same clips in a different order — silently skipped a
+    6% penalty the planner had paid. Two scores that came from different
+    functions were then not comparable, which is exactly what the matched-pair
+    experiment needs them to be.
+
+    An empty sequence is unpenalised: there is no ending to judge, and its
+    score is zero regardless.
+    """
+    if not seq:
+        return 1.0
+    return 1.0 if seq[-1].meta.can_end else UNFINISHED_PENALTY
 
 
 @dataclass
@@ -172,10 +192,7 @@ def plan(
     for beam in finished:
         seq = list(beam.seq)
         terms = score_sequence(seq, ctx, sim)
-        s = total_score(terms, strategy)
-        # A set that stops on a clip the model says cannot end feels unfinished.
-        if not seq[-1].meta.can_end:
-            s *= 0.94
+        s = total_score(terms, strategy) * ending_penalty(seq)
         scored.append((s, terms, beam))
 
     scored.sort(key=lambda x: x[0], reverse=True)
@@ -283,7 +300,11 @@ def plan_random(
 
 
 def rescore(result: PlanResult, ctx: PlanContext, sim: SimFn) -> PlanResult:
-    """Recompute after a human edits the timeline."""
+    """Recompute after a human edits the timeline, or after a reorder."""
     terms = score_sequence(result.sequence, ctx, sim)
     strategy = result.strategy if result.strategy in WEIGHT_PROFILES else "semantic"
-    return replace(result, terms=terms, score=total_score(terms, strategy))
+    return replace(
+        result,
+        terms=terms,
+        score=total_score(terms, strategy) * ending_penalty(result.sequence),
+    )

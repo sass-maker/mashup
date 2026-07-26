@@ -327,6 +327,58 @@ def serve_cmd(
 # ---- validation ---------------------------------------------------------
 
 
+def _report_order_stats(outdir: Path) -> None:
+    """Show whether the planner's order is even ahead on its own objective.
+
+    Printed before anyone is recruited: if the planned arm is mid-pack among
+    arbitrary orders, viewers cannot be expected to prefer it, and the thing
+    to fix is the planner rather than the study.
+    """
+    import json as _json
+
+    stats = _json.loads((outdir / "KEY.json").read_text()).get("order_stats")
+    if not stats:
+        return
+    pct = stats["planned_percentile"]
+    console.print(
+        f"\n[dim]planner order scores {stats['planned_score']:.4f}, ahead of {pct:.0f}% of "
+        f"{stats['shuffles']} arbitrary orders of the same clips\n"
+        f"comparator (median shuffle) scores {stats['shuffled_score']:.4f}[/dim]"
+    )
+    if pct < 75:
+        err.print(
+            f"[yellow]the planner's own objective ranks its order in the top {100 - pct:.0f}% "
+            f"only — a null result here would be the planner's fault, not the thesis's.[/yellow]"
+        )
+
+
+@app.command()
+def coverage(
+    prompt: Annotated[str, typer.Option("--prompt", "-p")],
+    workdir: WORKDIR_OPT = None,
+) -> None:
+    """Does the archive hold material on this topic, or only noise?
+
+    Run this before an experiment. Similarity from an asymmetric embedding
+    model has a floor well above zero, so a brief the archive cannot serve
+    still returns confident-looking clips.
+    """
+    cfg = _runnable(workdir, embed=True)
+    cov = pipeline.check_coverage(prompt, cfg)
+    verdict = (
+        "[green]archive supports this brief[/green]"
+        if cov.viable
+        else "[red]not supported by this archive[/red]"
+    )
+    console.print(f"{verdict}\n  {cov.explain()}")
+    console.print(
+        f"\n  top {cov.top_k} mean {cov.top_k_mean:.3f}   "
+        f"nonsense floor {cov.floor:.3f}   lift {cov.lift:+.3f}"
+    )
+    if not cov.viable:
+        raise typer.Exit(1)
+
+
 @app.command()
 def experiment(
     prompt: Annotated[str, typer.Option("--prompt", "-p")],
@@ -341,15 +393,44 @@ def experiment(
             help="Candidates retrieved before planning; widen if a variant comes back short",
         ),
     ] = DEFAULT_POOL,
+    matched: Annotated[
+        bool,
+        typer.Option(
+            "--matched",
+            help="Two arms with identical clips in different orders — tests sequencing alone",
+        ),
+    ] = False,
+    strategy: Annotated[
+        str, typer.Option("--strategy", help="Which planner the matched pair uses")
+    ] = "escalation",
     do_render: Annotated[bool, typer.Option("--render/--no-render")] = True,
     subtitles: Annotated[str, typer.Option("--subtitles")] = "sidecar",
 ) -> None:
-    """Generate the five blind conditions for the validation experiment."""
-    from mashup.experiment import run_experiment
+    """Generate the blind conditions for the validation experiment.
+
+    Five conditions by default, which measures the pipeline end to end.
+    `--matched` generates two instead, from one clip set in two orders, which
+    is the only design here that attributes a preference to sequencing.
+    """
+    from mashup.experiment import run_experiment, run_matched_experiment
 
     cfg = _runnable(workdir, embed=True)
     target = parse_duration(prompt, duration)
-    blinds = run_experiment(prompt, cfg, outdir=output, target=target, seed=seed, pool=pool)
+
+    cov = pipeline.check_coverage(prompt, cfg)
+    if not cov.viable:
+        err.print(f"[red]this archive cannot serve that brief[/red]\n  {cov.explain()}")
+        err.print("  Run `mashup coverage --prompt ...` to find one it can.")
+        raise typer.Exit(1)
+    err.print(f"[dim]coverage: {cov.explain()}[/dim]")
+
+    if matched:
+        blinds = run_matched_experiment(
+            prompt, cfg, outdir=output, target=target, strategy=strategy, seed=seed, pool=pool
+        )
+        _report_order_stats(output)
+    else:
+        blinds = run_experiment(prompt, cfg, outdir=output, target=target, seed=seed, pool=pool)
 
     for blind in blinds:
         edl = load_edl(blind.edl_path)
@@ -364,8 +445,9 @@ def experiment(
                 progress=_status(blind.label),
             )
     console.print(
-        f"\n[green]Wrote 5 blind variants to {output}[/green]\n"
+        f"\n[green]Wrote {len(blinds)} blind variants to {output}[/green]\n"
         f"Rate them in {output / 'ratings.csv'} — do not open KEY.json first.\n"
+        f"Hand raters the .mp4 files only: the .json and .srt name the condition.\n"
         f"Then run: mashup evaluate {output}"
     )
 
@@ -375,13 +457,27 @@ def evaluate(
     outdir: Annotated[Path, typer.Argument(help="Experiment directory")],
 ) -> None:
     """Unblind a completed rating sheet and check the PRD's criteria."""
-    from mashup.experiment import summarise_ratings
+    import json as _json
+
+    from mashup.experiment import summarise_matched, summarise_ratings
 
     try:
-        result = summarise_ratings(outdir)
-    except (OSError, RuntimeError) as exc:
+        design = _json.loads((outdir / "KEY.json").read_text()).get("design", "five-condition")
+        result = (summarise_matched if design == "matched" else summarise_ratings)(outdir)
+    except (OSError, RuntimeError, ValueError) as exc:
         err.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from exc
+
+    if design == "matched":
+        console.print(f"viewers: {result['viewers']}  ({result['decided']} expressed a preference)")
+        console.print(f"[bold]{result['verdict']}[/bold]")
+        mark = (
+            "[green]significant[/green]"
+            if result["significant"]
+            else "[yellow]not significant[/yellow]"
+        )
+        console.print(f"  {mark} at p < 0.05")
+        return
 
     console.print(f"viewers: {result['viewers']}")
     console.print("beats semantic baseline: " + str(result["beats_semantic"]))

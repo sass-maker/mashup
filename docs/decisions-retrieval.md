@@ -201,3 +201,81 @@ at median 0.70 in a 0.40–0.90 band against 0.50 in 0.10–0.90. A field true o
 every segment carries no information, so this is the same defect as a pinned
 term arriving from the data side. Neither has been checked against a human
 judgement; both are recorded in PROJECT_STATUS rather than assumed harmless.
+
+---
+
+## 17. The blind study was measuring noise, and nothing objected
+
+**Context.** A five-condition set had been generated, rendered, counterbalanced
+and prepared for viewers on the brief *"seven minutes on airline travel"*,
+against twenty episodes of a 1950s quiz show. The `relevance` term read
+0.41–0.46 for all five conditions — including the random control — which had
+been logged across three runs as an undiagnosed flat term.
+
+**What was actually wrong.** Not the term. The archive contains one segment
+mentioning "airline", eight mentioning "plane" and none mentioning
+"stewardess". There was nothing to retrieve.
+
+The reason nothing caught it is that cosine similarity from an asymmetric
+encoder has a floor far above zero. Measured with 40 nonsense probes against
+this corpus, meaningless text averages **0.434** over its ten best matches.
+The airline brief managed 0.459. `"quantum chromodynamics and lattice gauge
+theory"` scored *higher* than `"airline travel"`. Every relevance figure the
+project had recorded was sitting in a band where random letters score 0.43.
+
+**Decision.** Measure the floor rather than pick a threshold, the same move
+already made for [redundancy and flow calibration](#12-calibrate-similarity-thresholds-from-the-corpus).
+`Retriever.coverage` embeds deterministic junk, takes what it earns for free,
+and reports the real brief's lift over it. `mashup coverage` exposes it and
+`mashup experiment` refuses a brief that fails it.
+
+**Why a fixed cosine could never have worked.** The floor is a property of the
+encoder *and* the corpus together. It is not portable across either, which is
+exactly why the number had to be measured at runtime instead of written down.
+
+**What it cost to find.** The pipeline had produced five plausible MP4s, a
+counterbalanced rating sheet and a withheld key. Every stage reported success.
+The only signal was a term reading flat, and that had been filed as a scoring
+defect for three runs rather than as the archive answering a question it had no
+material for.
+
+---
+
+## 18. Comparing five variants built from different clips cannot test ordering
+
+**Context.** The product claim is that structure-aware *sequencing* beats
+retrieve-and-join. The five-condition experiment was the test of it.
+
+**What the measurement showed.** The five variants barely share material. On
+Jaccard over clip sets, the chronological cut overlapped the other four
+conditions by 0.00–0.05. A viewer preferring it would have been responding to
+selection at least as much as to order, and the study had no way to separate
+the two.
+
+Two further decompositions made the point sharper:
+
+- Of each objective's weight, the share that can see order at all is 0.32 for
+  chronological, 0.54 for escalation, 0.56 for callback — and **0.00 for both
+  baselines**, whose profile is relevance plus duration. The headline gap
+  between 0.742 and 0.535 was partly two objectives measuring different things.
+- Four of the eight terms varied by less than 0.10 across all five conditions.
+  They supplied 45–67% of each AI score and **100%** of both baseline scores.
+
+**Decision.** Add a matched pair: one clip set, two orders, same weight
+profile, scored by the same function. `mashup experiment --matched`. A
+preference there is attributable to sequencing and nothing else. Documented in
+[experiment-matched.md](experiment-matched.md).
+
+**The encouraging half.** Against 1000 shuffles of its own clips, the planner's
+order sat at the 99.4th, 99.9th and 100th percentile for the three AI
+strategies. The beam search really is optimising order rather than dressing up
+a retrieval result — the ordering mechanism works. What was missing was an
+experiment able to ask a human about it.
+
+**A bug the new design exposed immediately.** `plan` applied a 6% penalty for
+ending on a clip the model says cannot end; `rescore` did not. The matched pair
+runs one arm through each, so an arbitrary shuffle outscored the planner's own
+output on a 6% artefact while being worse on every order-sensitive term. The
+penalty now lives in `ending_penalty` and both paths call it. This had been
+latent since `rescore` was written, silently inflating every human-edited
+timeline's score.

@@ -4,6 +4,12 @@ mashup exists to answer one question: **does structure-aware sequencing beat
 retrieving relevant clips and joining them?** This page is how you run that
 comparison and how you read the answer.
 
+> This five-condition design measures the pipeline end to end. It **cannot
+> attribute a preference to sequencing**, because its variants are built from
+> different clips. For that, see
+> [the matched pair](experiment-matched.md), which holds the clips fixed and
+> varies only their order.
+
 The comparison is blind and the churn measurement is mechanical, both on
 purpose — they live in `src/mashup/experiment.py` rather than in a spreadsheet
 someone fills in by hand.
@@ -49,6 +55,27 @@ uv run mashup churn output/escalation.json study/run-01/escalation.edited.json
 The archive must already be ingested, enriched and embedded — see the
 [README quickstart](../README.md#quickstart).
 
+### Check the archive can serve the brief
+
+```bash
+uv run mashup coverage --prompt "how couples met and got married"
+```
+
+`experiment` runs this too and refuses a brief that fails it. Cosine
+similarity from an asymmetric encoder never returns anything near zero, so a
+topic the archive does not cover still produces five confident-looking
+variants. Measured on the dev archive, **nonsense text scores 0.434** against
+its ten best matches; `"seven minutes on airline travel"` — three supporting
+segments in twenty episodes — scored 0.459, a lift of +0.024.
+
+A five-condition set was generated, rendered and prepared for viewers on that
+brief before the floor was measured. Nothing in the pipeline objected.
+
+The check embeds deterministic junk queries, takes what they earn for free, and
+asks how far the real brief clears it. `MIN_LIFT` is 0.06, drawn from one
+archive and one encoder, so treat a near-miss as "look at the clips" rather
+than as a verdict.
+
 ### Check the runtimes before recruiting anyone
 
 **All five variants must come out about the same length.** They are ranked
@@ -76,6 +103,9 @@ It goes into a separate `KEY.json` alongside the prompt, target duration, seed,
 generation timestamp and each variant's planner score. **`KEY.json` is the file
 you withhold from raters.** Hand over the labelled variants (rendered to MP4)
 and `ratings.csv`, and nothing else.
+
+`A.json` and `A.srt` sit in the same directory and **the JSON names the
+condition** in its `strategy` field. Hand over the `.mp4` files only.
 
 The seed is recorded so the assignment is reproducible: regenerating with the
 same seed puts the same conditions behind the same letters.
