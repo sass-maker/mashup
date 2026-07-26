@@ -10,7 +10,14 @@ from mashup.segment.enrich import BATCH_SIZE, CONTEXT_CHARS, enrich_segments
 
 
 class StubGateway:
-    """Records every chat_json call and replays a scripted reply per call."""
+    """Records every chat call and replays a scripted reply per call.
+
+    Mirrors the real backends' contract: `chat_json_many` answers a list of
+    conversations and returns `None` for any that failed, so a raising reply
+    exercises the per-batch degradation rather than killing the run.
+    """
+
+    name = "stub"
 
     def __init__(self, replies: Any) -> None:
         self._replies = replies
@@ -28,6 +35,21 @@ class StubGateway:
         if callable(self._replies):
             return self._replies(messages)
         return self._replies
+
+    def chat_json_many(
+        self,
+        conversations: Any,
+        *,
+        schema_hint: str,
+        concurrency: int = 4,
+    ) -> list[Any]:
+        out: list[Any] = []
+        for messages in conversations:
+            try:
+                out.append(self.chat_json(messages, schema_hint=schema_hint))
+            except GatewayError:
+                out.append(None)
+        return out
 
     @property
     def prompts(self) -> list[str]:
@@ -197,7 +219,10 @@ def test_failed_batch_does_not_discard_the_run() -> None:
     segments = [make_segment(i) for i in range(10)]
     calls: list[int] = []
 
-    class FlakyGateway:
+    class FlakyGateway(StubGateway):
+        def __init__(self) -> None:
+            super().__init__(None)
+
         def chat_json(self, messages, *, schema_hint, **kw):
             calls.append(1)
             if len(calls) == 1:
@@ -208,3 +233,27 @@ def test_failed_batch_does_not_discard_the_run() -> None:
     summaries = [s.meta.summary for s in out]
     assert summaries.count("") == 5, "exactly the failed batch keeps default metadata"
     assert len(summaries) - summaries.count("") == 5, "the surviving batch is enriched"
+
+
+# ---- entity hygiene ------------------------------------------------------
+
+
+def entities_from(values: Any) -> list[str]:
+    segments = [make_segment(0)]
+    reply = [{**good_item("s0"), "entities": values}]
+    return enrich_segments(segments, StubGateway(reply), batch_size=1)[0].meta.entities
+
+
+def test_entities_are_lowercased() -> None:
+    assert entities_from(["Bettina", "MR. SERIGNOLI"]) == ["bettina", "mr. serignoli"]
+
+
+def test_bare_numbers_are_not_entities() -> None:
+    """A local model kept offering ages and quiz answers as entities. Nothing
+    numeric is ever what a later clip calls back to, and `term_callback`
+    matching on '73' would be pure noise."""
+    assert entities_from(["arresti", "73", "65", "1953", "12.5", "$40"]) == ["arresti"]
+
+
+def test_a_name_containing_digits_survives() -> None:
+    assert entities_from(["apollo 13", "route 66"]) == ["apollo 13", "route 66"]

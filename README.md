@@ -27,10 +27,15 @@ Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), and FFmpeg
 (`ffmpeg` and `ffprobe` on `PATH` — `brew install ffmpeg`).
 
 ```bash
-uv sync                        # runtime + dev deps
+uv sync                        # runtime + dev deps, including local models
 uv sync --extra transcribe     # adds mlx-whisper (Apple silicon only)
 # Optional faster path: brew install whisperkit-cli
 ```
+
+The dev group carries the local model runtimes: torch and transformers for
+embeddings everywhere, and mlx-lm for chat on Apple silicon. A gateway-only
+install can skip both (`--no-dev`, then `--extra local` / `--extra localchat`
+as wanted).
 
 When an archive has no subtitles, `auto` prefers an installed
 `whisperkit-cli` and otherwise falls back to the optional mlx-whisper extra.
@@ -40,21 +45,27 @@ backend.
 
 ## Configuration
 
-Chat goes through the fleet free-ai gateway (OpenAI-compatible), so this
-project holds no provider keys of its own. **Embeddings run locally by
-default** — see below. Values are read from the environment or a `.env` file.
+**Every model runs locally by default.** On Apple silicon the whole pipeline —
+transcription, enrichment, embedding, planning, rendering — needs no
+credentials and no network. The fleet free-ai gateway remains available per
+stage. Values are read from the environment or a `.env` file.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `MASHUP_GATEWAY_API_KEY` | — | Gateway key. Required by `enrich`. `GATEWAY_API_KEY` is accepted as an alias. |
-| `MASHUP_EMBED_BACKEND` | `local` | `local` runs a HuggingFace encoder in-process; `gateway` calls out. |
+| `MASHUP_CHAT_BACKEND` | `local` on Apple silicon, else `gateway` | `local` runs an mlx model in-process. |
+| `MASHUP_LOCAL_CHAT_MODEL` | `mlx-community/Qwen3-4B-Instruct-2507-4bit` | Any mlx-lm repo id. |
+| `MASHUP_EMBED_BACKEND` | `local` | `local` runs a HuggingFace encoder in-process. |
 | `MASHUP_LOCAL_EMBED_MODEL` | `bge-base` | Alias from `mashup models`, or any HuggingFace repo id. |
+| `MASHUP_GATEWAY_API_KEY` | — | Gateway key. Needed only by a stage set to `gateway`. `GATEWAY_API_KEY` is an alias. |
 | `MASHUP_WHISPERKIT_MODEL` | — | Optional existing CoreML model directory for `whisperkit-cli`. |
 | `MASHUP_GATEWAY_URL` | `https://ai-gateway.sassmaker.com` | Gateway base URL. |
 | `MASHUP_PROJECT_ID` | `mashup` | Sent on every `/v1` call. |
-| `MASHUP_CHAT_MODEL` | `auto` | Chat model for brief parsing and enrichment. |
+| `MASHUP_CHAT_MODEL` | `auto` | Gateway chat model. Only read when the chat backend is `gateway`. |
 | `MASHUP_EMBED_MODEL` | `gemini-embedding-001` | Gateway embedding model. Only read when the backend is `gateway`; the gateway rejects `auto` here. |
 | `MASHUP_WORKDIR` | `.mashup` | State directory. `--workdir` overrides it per command. |
+
+`mashup models` prints which backend and model each stage would use right now,
+and whether a gateway key is needed at all.
 
 The editor server reads three more: `MASHUP_WEB_DIST` (where the built UI
 lives), `MASHUP_SERVE_OFFLINE` (never attempt a gateway call) and
@@ -65,6 +76,28 @@ Fleet operators can inject the key rather than exporting it:
 ```bash
 infisical run --projectId <free-ai> -- mashup enrich
 ```
+
+### Enrichment
+
+The one LLM pass over the archive, filling `topic`, `role`, `summary`,
+`required_context`, `energy`, `can_open`, `can_end` and `entities` per
+segment. On Apple silicon it runs `Qwen3-4B-Instruct-2507-4bit` through
+mlx-lm: about 25 minutes for a 727-segment archive, offline and free, and —
+unlike a gateway that routes to whichever provider is cheapest this minute —
+the same model every time.
+
+Prompts go to the backend a window at a time rather than one by one, because
+the two parallelise differently: the gateway wants concurrent HTTP, mlx wants
+one batched forward pass. Batching is worth 1.9× locally. A batch whose reply
+does not parse costs those five segments only; they keep neutral metadata and
+the next `enrich` retries them, since completed segments are persisted. A full
+run of the dev archive lost exactly one batch this way and a second `enrich`
+picked up the five segments in under a minute.
+
+Enrichment quality is what every scoring term reads, so the prompt is written
+against the weaker model rather than the stronger one — see
+[`docs/decisions-retrieval.md`](docs/decisions-retrieval.md) entry 16 for what
+diffing the two revealed.
 
 ### Embeddings
 
@@ -117,10 +150,10 @@ planning is the stage you iterate on fifty times.
 ```bash
 mashup ingest --input ./archive            # probe, transcribe if needed, split into segments
 mashup ingest --input ./archive --no-transcribe
-mashup enrich --concurrency 4              # LLM pass -> topic/role/energy/context per segment
+mashup enrich --concurrency 4              # local mlx pass -> topic/role/energy/context
 mashup embed                               # local encoder -> float32 blobs in SQLite
 mashup embed --reset                       # drop and recompute every vector
-mashup models                              # local embedding models this build knows
+mashup models                              # which backend and model each stage uses
 mashup status                              # counts, plus which embedder produced the vectors
 
 mashup build --prompt "..." --duration 420 --variants 3 --output output
@@ -135,9 +168,8 @@ mashup serve output/escalation.json --port 8765          # loopback-only editor
 
 `--subtitles` takes `none`, `sidecar` or `burn`; burn-in needs a libass-enabled
 ffmpeg. `--variants` selects the first N of `chronological, escalation,
-callback` (max 3). With local embeddings only `enrich` needs a gateway key —
-`build` falls back to regex brief parsing without one, so the whole planning
-and rendering loop runs offline.
+callback` (max 3). With both backends local no command needs a gateway key;
+`build` falls back to regex brief parsing without one.
 
 ### The transcript editor
 
@@ -195,7 +227,7 @@ output/
 archive (mp4/mp3 + srt/vtt)
   -> ingest      normalise cues, probe media, transcribe if needed
   -> split       cues -> pause-delimited atoms -> self-contained segments
-  -> enrich      one LLM pass -> SegmentMeta per segment
+  -> enrich      one local LLM pass -> SegmentMeta per segment
   -> embed       local encoder -> float32 blobs in SQLite
   -> retrieve    MMR over cosine similarity -> candidate pool
                  (+ entity expansion for the callback strategy)

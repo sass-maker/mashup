@@ -37,6 +37,9 @@ content domain at a time (comedy is the target).
 - Local embeddings: the `local` extra (torch, transformers), also in the dev
   group so `uv sync` gets a working default. `BAAI/bge-base-en-v1.5` from the
   HuggingFace cache.
+- Local chat: the `localchat` extra (mlx-lm), Apple silicon only, also in the
+  dev group behind a platform marker.
+  `mlx-community/Qwen3-4B-Instruct-2507-4bit` from the HuggingFace cache.
 - Optional transcription: installed `whisperkit-cli` with a local CoreML model
   (preferred) or the `transcribe` extra with mlx-whisper (Apple silicon only).
 - archive.org — source of the public-domain dev corpus (`ybylcollection`).
@@ -45,9 +48,10 @@ content domain at a time (comedy is the target).
 ### Internal
 
 - Fleet free-ai gateway (`https://ai-gateway.sassmaker.com`), OpenAI-compatible.
-  Chat routes through it; this repo holds no provider keys. Embeddings default
-  to a local model, so only `enrich` needs the gateway.
-- `MASHUP_GATEWAY_API_KEY` — from the fleet Infisical `free-ai` project.
+  Optional now: both chat and embeddings default to local models on Apple
+  silicon, so no stage requires it. This repo holds no provider keys.
+- `MASHUP_GATEWAY_API_KEY` — from the fleet Infisical `free-ai` project. Only
+  needed when a stage is explicitly set back to the gateway backend.
 
 ## Timeline
 
@@ -72,14 +76,17 @@ content domain at a time (comedy is the target).
   cosine thresholds fitted to one model's similarity scale, a callback term
   that counted an archive's boilerplate as running gags, and a beam search
   that preferred short sequences. See "Second run" below.
-- Next — exercise the editor against real media, then run the blind comparison.
+- 2026-07-26 — enrichment moved to a local mlx model, the last stage that
+  needed the network. The whole pipeline now runs offline on Apple silicon.
+- Next — exercise the editor against real media, regenerate the blind set,
+  then run the blind comparison.
 
 ## Products
 
 - `mashup` CLI (`uv run mashup`) — the whole pipeline. Subcommands: `ingest`,
   `enrich`, `embed`, `models`, `status`, `build`, `preview`, `render`, `serve`;
   the bare invocation `mashup --input … --prompt …` runs everything in one
-  shot. With local embeddings only `enrich` needs a gateway key.
+  shot. On Apple silicon no subcommand needs a gateway key.
 - `mashup serve` — loopback-only local editor server (stdlib `http.server`)
   exposing the EDL, candidate search, segment detail and range-served media,
   and serving the built editor bundle from `web/dist`.
@@ -100,8 +107,9 @@ content domain at a time (comedy is the target).
   prefers atoms opening a new thought.
 - **Segment understanding** — one batched LLM pass with neighbouring context,
   filling topic, role, summary, `required_context`, energy, `can_open`,
-  `can_end` and entities; per-item fallback to neutral metadata so one bad item
-  never costs a batch.
+  `can_end` and entities; runs on a local mlx model by default; per-item
+  fallback to neutral metadata so one bad item never costs a batch, and
+  per-batch isolation so one bad batch never costs the archive.
 - **Gateway client** — defensive JSON parsing with a repair round-trip, batched
   embeddings with index-ordered reassembly, retries on transient status codes,
   and a content-addressed on-disk cache.
@@ -283,9 +291,68 @@ optimises this objective, so none of it is evidence about what a viewer
 prefers. The blind comparison remains the only real test, and the rendered set
 in `experiment/` predates these fixes.
 
+## Third run (2026-07-26, local enrichment)
+
+`enrich` moved to `mlx-community/Qwen3-4B-Instruct-2507-4bit`, the last stage
+that needed the network. 727 segments in roughly 25 minutes, offline. Metadata
+changed, so every vector was re-embedded.
+
+**The entity prompt was underspecified, and only the weak model showed it.**
+See decision 16. After the rewrite:
+
+| entities | gateway | local, before fix | local, after fix |
+|---|---|---|---|
+| distinct | 1,025 | 2,697 | 1,356 |
+| recurring (≥2 segments) | 258 | 674 | 296 |
+
+**Two fields are measurably worse than the gateway's**, both feeding scoring,
+neither checked against a human judgement:
+
+| | gateway | local |
+|---|---|---|
+| `required_context` non-empty | 76% | **100%** |
+| `energy` median | 0.50 | **0.70** |
+| `energy` range | 0.10–0.90 | **0.40–0.90** |
+
+`required_context` true for every segment carries no information at all. This
+is the same failure mode as a pinned term, arriving from the data side.
+
+**The callback term's headline improved while its signal halved.**
+
+| | second run | third run |
+|---|---|---|
+| `callback` — callback strategy | 0.15 | 0.32 |
+| `callback` — random control | 0.00 | 0.25 |
+| `chronological` duration (420s target) | 325s | **410s** |
+
+The 0.25 floor is not a better plan. `term_callback` is
+`0.5·density + 0.25·bookend + 0.25·lands`, and `lands` is a binary check on
+whether the final clip's role is `callback` or `closer` — true for all five
+conditions, so a quarter of the term is a constant. Decomposing 0.32 gives
+density 1/7: the callback strategy found **one** cross-source callback in nine
+clips, against two in the second run. Reporting the term without decomposing
+it would have read as an improvement.
+
+Two known defects, deliberately not yet fixed, because both change what all
+five recorded conditions mean and the blind set depends on those definitions:
+
+1. `lands` is an ending-quality signal that does not belong in a term named
+   callback.
+2. `non_repetition` is 1.00 for all five conditions including random. The
+   percentile calibration from decision 14 set `redundancy` to 0.8428, the
+   p99 of the pool — about 1% of pairs can exceed it, and a nine-clip plan has
+   36 pairs. The term moved from always-penalised to never-fires.
+
+Latent, not currently biting: alias fragmentation defeats the boilerplate
+filter. The 5% cut drops `groucho` (66) and `desoto` (53) but not
+`groucho marx` (28) or `desoto plymouth` (28). Measured zero spurious links in
+the current plans, so it is recorded rather than fixed.
+
 ## Operational notes
 
-- Embeddings default to local; only `enrich` needs the gateway. Run it under
+- The whole pipeline runs offline on Apple silicon; no subcommand needs a
+  gateway key. `MASHUP_CHAT_BACKEND=gateway` or `MASHUP_EMBED_BACKEND=gateway`
+  opts a stage back in, and only then is a key required. Run those under
   `infisical run --silent --command '...'` with
   `MASHUP_GATEWAY_API_KEY="$Free_ai"`.
 - The gateway falls back between embedding providers under sustained load,

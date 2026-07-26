@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+from mashup.chat import make_chat
 from mashup.config import Config
 from mashup.embedding import make_embedder
 from mashup.gateway import Gateway
@@ -60,7 +61,7 @@ def enrich(cfg: Config, *, concurrency: int = 4, progress=None) -> dict[str, int
         if not todo:
             return store.counts()
 
-        gw = Gateway(cfg)
+        chat = make_chat(cfg, gateway=Gateway(cfg) if cfg.chat_backend == "gateway" else None)
         done = 0
         # Checkpoint to the store as we go. Holding every result until the end
         # meant one failed batch discarded the entire archive's work.
@@ -73,7 +74,9 @@ def enrich(cfg: Config, *, concurrency: int = 4, progress=None) -> dict[str, int
 
             # enrich_segments returns copies rather than mutating in place, so
             # the return value is the only thing carrying the new metadata.
-            enriched = enrich_segments(chunk, gw, concurrency=concurrency, progress=chunk_progress)
+            enriched = enrich_segments(
+                chunk, chat, concurrency=concurrency, progress=chunk_progress
+            )
             # Only persist segments that actually came back enriched, so a
             # failed batch stays on the todo list for the next run.
             store.update_segment_meta([s for s in enriched if s.meta.summary])
@@ -184,7 +187,9 @@ def make_mashups(
     crossfade: float = 0.0,
 ) -> list[EDL]:
     """Plan one EDL per strategy from an already-enriched archive."""
-    gw = Gateway(cfg)
+    # Local planning does not need chat. Without a key, use the deterministic
+    # brief parser instead of constructing a doomed bearer-auth request.
+    gw = Gateway(cfg) if cfg.gateway_api_key else None
     embedder = make_embedder(cfg, gateway=gw)
     request = parse_request(prompt, gw)
 

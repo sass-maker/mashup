@@ -324,7 +324,10 @@ class EditorState:
                 def embed_query(texts: list[str]) -> list[list[float]]:
                     return embedder.embed(texts, kind="query")
 
-                request = parse_request(edl.prompt, gw)
+                request = parse_request(
+                    edl.prompt,
+                    gw if self.cfg.gateway_api_key else None,
+                )
                 ctx = PlanContext(
                     query_vec=embed_query([request.query])[0],
                     target_duration=edl.target_duration,

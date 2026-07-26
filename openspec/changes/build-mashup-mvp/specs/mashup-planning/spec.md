@@ -11,13 +11,17 @@ strategies and two baselines.
 ### Requirement: Brief parsing with a regex fallback
 The system SHALL parse the brief into a dense retrieval query, an ordered list
 of structural beats and an optional tone, and SHALL fall back to a regex parse
-— splitting on ordering markers and stripping meta words — whenever the gateway
-call fails or returns no usable query. An explicit duration in the brief SHALL
-override the `--duration` default.
+— splitting on ordering markers and stripping meta words — whenever the model
+call fails, is unreachable, or returns no usable query. An explicit duration in
+the brief SHALL override the `--duration` default.
 
 #### Scenario: Gateway unavailable
 - **WHEN** brief parsing raises a gateway error
 - **THEN** the regex parse is used and planning continues
+
+#### Scenario: No credentials and no cached reply
+- **WHEN** there is no gateway key and no cached response for this brief
+- **THEN** the regex parse is used immediately rather than attempting a doomed call
 
 #### Scenario: Brief with no stated structure
 - **WHEN** the brief names no ordering

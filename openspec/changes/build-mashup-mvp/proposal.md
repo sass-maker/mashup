@@ -19,8 +19,8 @@ that can kill it.
 - Segment transcripts on speech structure rather than subtitle lines, so a
   clip carries a whole setup-and-payoff instead of an orphaned fragment.
 - Extract per-segment understanding (topic, role, summary, prerequisites,
-  energy, opener/closer suitability, recurring entities) with one LLM pass
-  through the fleet free-ai gateway.
+  energy, opener/closer suitability, recurring entities) with one LLM pass,
+  against either a local in-process model or the fleet free-ai gateway.
 - Plan sequences with an explicit, inspectable objective covering all eight
   properties the brief asks for, and expose the per-term breakdown in the
   EDL so a bad result can be diagnosed.

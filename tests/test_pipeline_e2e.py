@@ -352,6 +352,11 @@ class StubGateway:
             return enrichment_reply(messages[-1]["content"])
         return dict(BRIEF_REPLY)
 
+    def chat_json_many(
+        self, conversations: Any, *, schema_hint: str, concurrency: int = 4, **_kwargs: Any
+    ) -> list[Any]:
+        return [self.chat_json(m, schema_hint=schema_hint) for m in conversations]
+
 
 def _forbid_network(*_args: Any, **_kwargs: Any) -> Any:
     raise AssertionError("the pipeline attempted a network call")
@@ -390,15 +395,16 @@ def run(tmp_path_factory: pytest.TempPathFactory):
 
     cfg = Config(
         gateway_url="http://gateway.invalid",
-        gateway_api_key="",
+        gateway_api_key="stub-key",
         project_id="mashup-test",
         chat_model="stub-chat",
         embed_model="stub-embed",
         workdir=root / "work",
-        # Route embeddings through StubGateway rather than the default local
-        # encoder: this suite is about pipeline wiring, and it must stay both
-        # hermetic and free of a torch import.
+        # Route both model stages through StubGateway rather than the default
+        # local backends: this suite is about pipeline wiring, and it must
+        # stay hermetic and free of a torch or mlx import.
         embed_backend="gateway",
+        chat_backend="gateway",
     )
 
     with pytest.MonkeyPatch.context() as mp:

@@ -18,10 +18,11 @@ sequencing actually beats retrieve-and-join.
   search, the eight surfaced score terms, outward-only cut snapping,
   audio-over-a-card rendering, the free-ai gateway, the public-domain corpus,
   resumability, and the stdlib editor backend.
-- [decisions-retrieval.md](decisions-retrieval.md) — three further entries on
-  running embeddings locally, calibrating similarity thresholds from the
-  corpus instead of hard-coding them, and why the callback strategy needs its
-  own candidate pool.
+- [decisions-retrieval.md](decisions-retrieval.md) — five further entries on
+  running embeddings and enrichment locally, calibrating similarity thresholds
+  from the corpus instead of hard-coding them, why the callback strategy needs
+  its own candidate pool, and what diffing a weak model against a strong one
+  revealed about the enrichment prompt.
 - [experiment.md](experiment.md) — how to run the five-condition blind
   comparison: the withheld key, the rating sheet, the success criteria and the
   kill criterion with their real thresholds, and how `timeline_churn` measures

@@ -12,6 +12,8 @@ embed a whole archive in seconds removes both problems for free.
 from __future__ import annotations
 
 import os
+import platform
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,6 +27,18 @@ DEFAULT_EMBED_MODEL = "gemini-embedding-001"
 DEFAULT_CHAT_MODEL = "auto"
 DEFAULT_EMBED_BACKEND = "local"
 DEFAULT_LOCAL_EMBED_MODEL = "bge-base"
+DEFAULT_LOCAL_CHAT_MODEL = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
+
+
+def _default_chat_backend() -> str:
+    """Local chat runs on mlx, which is Apple silicon only.
+
+    Defaulting to `local` everywhere would make the first command on a Linux
+    box fail with an import error instead of doing the obvious thing.
+    """
+    if sys.platform == "darwin" and platform.machine() == "arm64":
+        return "local"
+    return "gateway"
 
 
 class ConfigError(RuntimeError):
@@ -39,9 +53,16 @@ class Config:
     chat_model: str
     embed_model: str
     workdir: Path
-    # "local" runs a HuggingFace encoder in-process; "gateway" calls out.
+    # "local" runs the model in-process; "gateway" calls out.
     embed_backend: str = DEFAULT_EMBED_BACKEND
     local_embed_model: str = DEFAULT_LOCAL_EMBED_MODEL
+    chat_backend: str = "gateway"
+    local_chat_model: str = DEFAULT_LOCAL_CHAT_MODEL
+
+    @property
+    def needs_gateway(self) -> bool:
+        """Whether any stage will actually call out."""
+        return "gateway" in (self.embed_backend, self.chat_backend)
 
     @property
     def db_path(self) -> Path:
@@ -60,9 +81,12 @@ class Config:
             d.mkdir(parents=True, exist_ok=True)
 
 
-def load_config(workdir: Path | str | None = None, *, require_key: bool = True) -> Config:
+def load_config(workdir: Path | str | None = None, *, require_key: bool = False) -> Config:
+    """Read the environment. `require_key` is for callers that know they need
+    the gateway; most commands no longer do, so it defaults off."""
     key = os.getenv("MASHUP_GATEWAY_API_KEY") or os.getenv("GATEWAY_API_KEY") or ""
     backend = os.getenv("MASHUP_EMBED_BACKEND") or DEFAULT_EMBED_BACKEND
+    chat_backend = os.getenv("MASHUP_CHAT_BACKEND") or _default_chat_backend()
     if require_key and not key:
         raise ConfigError(
             "No gateway key. Set MASHUP_GATEWAY_API_KEY (or GATEWAY_API_KEY).\n"
@@ -79,4 +103,6 @@ def load_config(workdir: Path | str | None = None, *, require_key: bool = True) 
         workdir=wd,
         embed_backend=backend,
         local_embed_model=(os.getenv("MASHUP_LOCAL_EMBED_MODEL") or DEFAULT_LOCAL_EMBED_MODEL),
+        chat_backend=chat_backend,
+        local_chat_model=(os.getenv("MASHUP_LOCAL_CHAT_MODEL") or DEFAULT_LOCAL_CHAT_MODEL),
     )

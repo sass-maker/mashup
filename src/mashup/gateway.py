@@ -16,7 +16,8 @@ import contextlib
 import hashlib
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import TracebackType
 from typing import Any
@@ -30,6 +31,7 @@ from tenacity import (
 )
 
 from mashup.config import Config
+from mashup.jsonreply import JSONValue, format_rules, parse_json_reply
 
 # Status codes worth retrying: rate limits and server-side faults. 400/401/403
 # are our fault and will fail identically forever.
@@ -54,8 +56,6 @@ def _is_routing_failure(status: int, text: str, body: dict[str, Any]) -> bool:
 
 
 _BODY_EXCERPT = 500
-
-JSONValue = dict[str, Any] | list[Any]
 
 
 class GatewayError(RuntimeError):
@@ -96,14 +96,14 @@ class Gateway:
         # Which embedding model the gateway actually served, so a mid-run
         # provider fallback cannot silently mix vector spaces.
         self._embed_model_used: str | None = None
+        headers = {"Content-Type": "application/json"}
+        if config.gateway_api_key:
+            headers["Authorization"] = f"Bearer {config.gateway_api_key}"
         self._client = httpx.Client(
             base_url=config.gateway_url,
             timeout=timeout,
             transport=transport,
-            headers={
-                "Authorization": f"Bearer {config.gateway_api_key}",
-                "Content-Type": "application/json",
-            },
+            headers=headers,
         )
 
     # ---------------------------------------------------------------- lifecycle
@@ -164,12 +164,12 @@ class Gateway:
         """
         # Format rules go last so they are the freshest instruction, and in
         # their own message so the caller's prompt stays untouched.
-        convo = [*messages, {"role": "system", "content": _format_rules(schema_hint)}]
+        convo = [*messages, {"role": "system", "content": format_rules(schema_hint)}]
         last_error = ""
         for attempt in range(max(1, retries)):
             reply = self.chat(convo, model=model, temperature=0.0 if attempt else 0.2)
             try:
-                return _parse_json(reply)
+                return parse_json_reply(reply)
             except ValueError as exc:
                 last_error = str(exc)
                 convo = [
@@ -186,6 +186,40 @@ class Gateway:
         raise GatewayError(
             f"model never returned valid JSON after {retries} attempts: {last_error}"
         )
+
+    def chat_json_many(
+        self,
+        conversations: Sequence[list[dict[str, Any]]],
+        *,
+        schema_hint: str,
+        concurrency: int = 4,
+    ) -> list[JSONValue | None]:
+        """Answer several prompts concurrently; `None` marks one that failed.
+
+        The local backend satisfies the same contract with a single batched
+        forward pass. Keeping the shape identical is what lets enrichment stay
+        ignorant of which one it is talking to.
+        """
+        conversations = list(conversations)
+        if not conversations:
+            return []
+        out: list[JSONValue | None] = [None] * len(conversations)
+
+        def one(index: int) -> tuple[int, JSONValue | None]:
+            try:
+                return index, self.chat_json(conversations[index], schema_hint=schema_hint)
+            except GatewayError:
+                # One unroutable prompt must not discard the rest.
+                return index, None
+
+        with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
+            for index, value in pool.map(one, range(len(conversations))):
+                out[index] = value
+        return out
+
+    @property
+    def name(self) -> str:
+        return f"gateway:{self.config.chat_model}"
 
     def embed(
         self,
@@ -355,60 +389,6 @@ class Gateway:
         except OSError:
             # The cache is an optimisation; never fail a call over it.
             pass
-
-
-# ---------------------------------------------------------------- json helpers
-
-_FENCE_RE = re.compile(r"```(?:json|JSON)?\s*(.*?)\s*```", re.DOTALL)
-
-
-def _format_rules(schema_hint: str) -> str:
-    return (
-        "Respond with JSON only. No prose, no explanation, no markdown code fences.\n"
-        f"Shape:\n{schema_hint}"
-    )
-
-
-def _parse_json(text: str) -> JSONValue:
-    """Parse JSON out of a model reply that may be fenced or wrapped in prose."""
-    stripped = text.strip()
-    if not stripped:
-        raise ValueError("empty reply")
-
-    candidates: list[str] = []
-    fenced = _FENCE_RE.search(stripped)
-    if fenced:
-        candidates.append(fenced.group(1))
-    candidates.append(stripped)
-
-    outermost = _outermost_span(stripped)
-    if outermost is not None:
-        candidates.append(outermost)
-
-    error = "no JSON found"
-    for candidate in candidates:
-        try:
-            value = json.loads(candidate)
-        except ValueError as exc:
-            error = str(exc)
-            continue
-        if isinstance(value, dict | list):
-            return value
-        error = f"expected object or array, got {type(value).__name__}"
-    raise ValueError(error)
-
-
-def _outermost_span(text: str) -> str | None:
-    """Slice from the first `{`/`[` to its matching closing bracket."""
-    starts = [(text.find(c), c) for c in "{[" if text.find(c) != -1]
-    if not starts:
-        return None
-    start, opener = min(starts)
-    closer = "}" if opener == "{" else "]"
-    end = text.rfind(closer)
-    if end <= start:
-        return None
-    return text[start : end + 1]
 
 
 def _cache_key(endpoint: str, model: str, payload: dict[str, Any]) -> str:

@@ -45,7 +45,7 @@ SHALL be folded into the previous segment rather than emitted as a fragment.
 - **THEN** it becomes a segment on its own rather than being split mid-speech
 
 ### Requirement: LLM enrichment with neighbouring context
-The system SHALL send segments to the gateway in small batches, each item
+The system SHALL send segments to a chat model in small batches, each item
 accompanied by a bounded excerpt of the preceding and following transcript from
 the same recording, and SHALL instruct the model to use that context only to
 decide what the segment silently assumes. Each item SHALL be returned with
@@ -55,6 +55,20 @@ and `entities`.
 #### Scenario: Clip that references an earlier premise
 - **WHEN** the segment relies on a name or bit established in the context before it
 - **THEN** the prerequisite is recorded in `required_context` and `can_open` is false
+
+### Requirement: Interchangeable chat backends
+The system SHALL support enrichment against either a local in-process model or
+the remote gateway, selected by configuration, behind one interface. It SHALL
+hand the backend a window of prompts at a time rather than one at a time, so
+each can parallelise in its own way, and SHALL report progress per window.
+
+#### Scenario: No credentials available
+- **WHEN** every model stage is configured to run locally
+- **THEN** enrichment completes without a gateway key and without network access
+
+#### Scenario: A backend cannot answer one window
+- **WHEN** one batch's reply is missing or does not parse
+- **THEN** only that batch's segments keep default metadata and the run continues
 
 ### Requirement: Per-item fallback, never per-batch loss
 The system SHALL match a returned item to its segment by the echoed id and
@@ -81,4 +95,4 @@ interrupted or repeated run does not pay for work already done.
 
 #### Scenario: Re-running enrich after a crash
 - **WHEN** `enrich` is run again after half the archive has been enriched
-- **THEN** only the unenriched segments are sent to the gateway
+- **THEN** only the unenriched segments are sent to the model

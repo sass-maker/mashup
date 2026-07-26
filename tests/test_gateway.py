@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +11,8 @@ import httpx
 import pytest
 
 from mashup.config import Config
-from mashup.gateway import Gateway, GatewayError, _parse_json
+from mashup.gateway import Gateway, GatewayError
+from mashup.jsonreply import parse_json_reply
 
 
 def make_config(tmp_path: Path) -> Config:
@@ -61,6 +63,30 @@ def test_sends_bearer_token_and_project_id(tmp_path: Path) -> None:
     body = json.loads(request.content)
     assert body["project_id"] == "mashup-test"
     assert body["model"] == "auto"
+
+
+def test_empty_key_omits_invalid_authorization_header(tmp_path: Path) -> None:
+    seen: list[httpx.Request] = []
+    cfg = replace(make_config(tmp_path), gateway_api_key="")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(401, text="missing key")
+
+    with (
+        Gateway(
+            cfg,
+            use_cache=False,
+            transport=httpx.MockTransport(handler),
+            retry_attempts=1,
+            retry_wait=0.0,
+            retry_max_wait=0.0,
+        ) as gw,
+        pytest.raises(GatewayError),
+    ):
+        gw.chat([{"role": "user", "content": "hi"}])
+
+    assert "Authorization" not in seen[0].headers
 
 
 def test_embed_batches_and_preserves_order(tmp_path: Path) -> None:
@@ -262,9 +288,9 @@ def test_retries_on_transport_error(tmp_path: Path) -> None:
 
 def test_parse_json_rejects_scalars() -> None:
     with pytest.raises(ValueError):
-        _parse_json("42")
+        parse_json_reply("42")
     with pytest.raises(ValueError):
-        _parse_json("   ")
+        parse_json_reply("   ")
 
 
 def test_auto_model_retries_gateway_routing_failure(tmp_path: Path) -> None:

@@ -1,8 +1,9 @@
 # Decision log — retrieval and scoring
 
-Continues [`decisions.md`](decisions.md). These three entries all came out of
-one change: making the embedding model swappable, which exposed how much of
-the scoring layer had been silently fitted to a single model's behaviour.
+Continues [`decisions.md`](decisions.md). Entries 12–14 all came out of one
+change — making the embedding model swappable, which exposed how much of the
+scoring layer had been silently fitted to a single model's behaviour. Entry 15
+finishes the job by moving the last networked stage in-process.
 
 ---
 
@@ -104,3 +105,99 @@ reuse an entity already in it.
 confound in the blind comparison, and it must be reported alongside any result.
 The alternative — a strategy structurally unable to do the thing it is named
 for — is worse.
+
+---
+
+## 15. Enrichment runs on a local mlx model
+
+**Context.** After embeddings moved in-process, enrichment was the only stage
+left needing the network — and it was the worst one to depend on. Its first
+run over 727 segments took four passes to drain past routing failures and rate
+limits, and one of those failures silently discarded every segment it had
+already enriched.
+
+**Decision.** `Qwen3-4B-Instruct-2507-4bit` through mlx-lm, in-process, as the
+default chat backend on Apple silicon. The gateway stays available via
+`MASHUP_CHAT_BACKEND=gateway`, and remains the default everywhere else because
+mlx does not exist there. `Gateway` already satisfied the `ChatModel`
+protocol, so there is no wrapper class to drift out of sync.
+
+**Why.** Sixteen minutes for a full archive, offline, free, and reproducible —
+the gateway routes to whichever provider is cheapest this minute, so two runs
+of the same prompt are not necessarily the same model. Enrichment quality is
+what every scoring term reads, which makes "the same model every time" worth
+more here than raw capability.
+
+**Consequences.**
+
+- **The batching contract is `chat_json_many`, not one call at a time.** The
+  two backends parallelise in completely different ways — the gateway wants
+  concurrent HTTP requests, mlx wants one batched forward pass — and hiding
+  that behind a list-in, list-out method keeps `enrich_segments` free of
+  backend knowledge. Batching is worth 1.9x locally: 2.42s per segment one at
+  a time, 1.30s at four.
+- **Prompts go a window at a time rather than all at once**, so a run that
+  takes minutes can report progress. A single callback at the end would be
+  no use.
+- **A `None` reply means one batch failed, not the run.** Both backends return
+  it rather than raising, which is the same degradation the gateway path
+  already had, now shared.
+- **JSON parsing moved to `jsonreply.py`.** `response_format` is not portable
+  across gateway providers and does not exist in mlx-lm at all, so both
+  backends ask for JSON in the prompt and parse defensively. Duplicating that
+  parser would have been the obvious way to let the two drift apart.
+
+**Trade-off accepted.** mlx-lm is Apple-silicon only, so the default backend
+is platform-dependent — the one piece of configuration in this project that
+is not the same everywhere.
+
+---
+
+## 16. A weaker model is a better prompt test
+
+**Context.** Running the local 4B model over the archive and diffing its
+output against the gateway's, field by field, was meant to be a regression
+check. It found something else.
+
+**What it found.** The `entities` field was being filled with topic phrases.
+Where the gateway extracted `["bettina", "arresti"]`, the local model returned
+`["waste money", "bum housekeepers", "stay on the phone"]`, and elsewhere
+`["bologna", "norway", "73", "65"]` — 2,697 distinct entities against the
+gateway's 1,025, and 674 recurring against 258.
+
+This matters because `entities` is the only thing `term_callback` matches on.
+Phrases like "cooking" and "late return" recur across every episode of a
+domestic-comedy quiz show, so the callback strategy would have been
+confidently optimising noise — the same failure decision 14 had just fixed
+from the other direction.
+
+**Decision.** Rewrite the instruction rather than accept the model's output,
+and validate the field rather than trust it. The prompt now says what
+`entities` is not ("NOT a topic list and NOT keyword extraction... exclude
+subjects, activities, descriptions, numbers"), gives one worked example with
+its counter-example, and permits `[]`. Bare numeric strings are rejected in
+code, since nothing numeric is ever what a later clip calls back to.
+
+**Why it generalises.** The original instruction — "recurring proper names,
+running gags and catchphrases" — read as perfectly clear, and a large model
+followed it. A 4B model did not, because the instruction described the target
+without excluding the obvious wrong answer. The larger model had been quietly
+covering for an underspecified prompt.
+
+And it was only *quietly*: on the same segments the gateway had also offered
+`"menial jobs"` and `"standing bar"` as entities. The tightened prompt is
+better for both backends; the weak model simply made the flaw impossible to
+miss. Diffing two models on the same input is worth more as a prompt review
+than as a quality gate.
+
+**Result.** 1,356 distinct entities and 296 recurring, against 2,697 and 674
+before the rewrite and the gateway's 1,025 and 258. The top of the list is
+people, sponsors and catchphrases rather than topic phrases.
+
+**Trade-off accepted.** A 4B model is still weaker than whatever the gateway
+routes to, and two fields remain measurably worse: `required_context` is
+non-empty for 100% of segments against the gateway's 76%, and `energy` sits
+at median 0.70 in a 0.40–0.90 band against 0.50 in 0.10–0.90. A field true of
+every segment carries no information, so this is the same defect as a pinned
+term arriving from the data side. Neither has been checked against a human
+judgement; both are recorded in PROJECT_STATUS rather than assumed harmless.

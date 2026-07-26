@@ -56,17 +56,28 @@ def _config(workdir: Path | None, *, require_key: bool = True):
         raise typer.Exit(2) from exc
 
 
-def _config_for_embedding(workdir: Path | None):
-    """Load config for a command that embeds but does not need chat.
-
-    Only the gateway backend makes a key mandatory. With the local backend
-    these commands run with no credentials at all.
-    """
+def _runnable(
+    workdir: Path | None,
+    *,
+    chat: bool = False,
+    embed: bool = False,
+):
+    """Load config, requiring a key only from backends that will actually
+    call out. With both backends local, every command runs uncredentialled."""
     cfg = _config(workdir, require_key=False)
-    if cfg.embed_backend == "gateway" and not cfg.gateway_api_key:
+    gateway_stages = [
+        name
+        for name, enabled, backend in (
+            ("chat", chat, cfg.chat_backend),
+            ("embed", embed, cfg.embed_backend),
+        )
+        if enabled and backend == "gateway"
+    ]
+    if gateway_stages and not cfg.gateway_api_key:
+        which = [f"MASHUP_{n.upper()}_BACKEND=gateway" for n in gateway_stages]
         err.print(
-            "[red]MASHUP_EMBED_BACKEND=gateway needs MASHUP_GATEWAY_API_KEY.[/red]\n"
-            "Unset it to embed locally instead."
+            f"[red]{' and '.join(which)} needs MASHUP_GATEWAY_API_KEY.[/red]\n"
+            "Unset it to run that stage locally instead."
         )
         raise typer.Exit(2)
     return cfg
@@ -116,8 +127,12 @@ def enrich(
     workdir: WORKDIR_OPT = None,
     concurrency: Annotated[int, typer.Option("--concurrency", "-c")] = 4,
 ) -> None:
-    """Extract topic/role/energy/context metadata for each segment."""
-    cfg = _config(workdir)
+    """Extract topic/role/energy/context metadata for each segment.
+
+    Runs a local mlx model on Apple silicon by default; set
+    MASHUP_CHAT_BACKEND=gateway to use the fleet gateway instead.
+    """
+    cfg = _runnable(workdir, chat=True)
     counts = pipeline.enrich(cfg, concurrency=concurrency, progress=_progress("enrich"))
     _show_counts(counts)
 
@@ -136,18 +151,36 @@ def embed(
     to pick another (`mashup models` lists them), or MASHUP_EMBED_BACKEND=gateway
     to embed through the fleet gateway instead.
     """
-    cfg = _config_for_embedding(workdir)
+    cfg = _runnable(workdir, embed=True)
     counts = pipeline.embed(cfg, progress=_progress("embed"), reset=reset, notice=_notice)
     _show_counts(counts)
 
 
 @app.command()
-def models() -> None:
-    """List the local embedding models this build knows about."""
+def models(workdir: WORKDIR_OPT = None) -> None:
+    """Show which models this run would use, and the local aliases available."""
     from mashup.embedding import DEFAULT_LOCAL_MODEL, LOCAL_MODELS
 
+    cfg = _config(workdir, require_key=False)
+    active = Table(box=None)
+    active.add_column("stage")
+    active.add_column("backend")
+    active.add_column("model")
+    active.add_row(
+        "chat",
+        cfg.chat_backend,
+        cfg.local_chat_model if _local(cfg.chat_backend) else cfg.chat_model,
+    )
+    active.add_row(
+        "embed",
+        cfg.embed_backend,
+        cfg.local_embed_model if _local(cfg.embed_backend) else cfg.embed_model,
+    )
+    console.print(active)
+    console.print(f"\n[dim]gateway needed: {'yes' if cfg.needs_gateway else 'no'}[/dim]\n")
+
     table = Table(box=None)
-    table.add_column("alias")
+    table.add_column("embed alias")
     table.add_column("repo")
     table.add_column("dim", justify="right")
     table.add_column("pooling")
@@ -155,7 +188,14 @@ def models() -> None:
         mark = " [green](default)[/green]" if alias == DEFAULT_LOCAL_MODEL else ""
         table.add_row(alias + mark, spec.repo, str(spec.dim), spec.pooling)
     console.print(table)
-    console.print("\n[dim]Any HuggingFace repo id also works (mean pooling assumed).[/dim]")
+    console.print(
+        "\n[dim]Any HuggingFace repo id also works for embeddings (mean pooling\n"
+        "assumed). Chat takes any mlx-lm repo id via MASHUP_LOCAL_CHAT_MODEL.[/dim]"
+    )
+
+
+def _local(backend: str) -> bool:
+    return backend == "local"
 
 
 @app.command()
@@ -201,7 +241,7 @@ def build(
     """Plan mashup variants and render them."""
     # Planning needs embeddings; the brief parser degrades to regex without a
     # key, so with the local backend this runs entirely offline.
-    cfg = _config_for_embedding(workdir)
+    cfg = _runnable(workdir, embed=True)
     target = parse_duration(prompt, duration)
     strategies = pipeline.AI_STRATEGIES[:variants]
 
@@ -299,7 +339,7 @@ def experiment(
     """Generate the five blind conditions for the validation experiment."""
     from mashup.experiment import run_experiment
 
-    cfg = _config_for_embedding(workdir)
+    cfg = _runnable(workdir, embed=True)
     target = parse_duration(prompt, duration)
     blinds = run_experiment(prompt, cfg, outdir=output, target=target, seed=seed)
 
@@ -381,7 +421,7 @@ def main(
         console.print(ctx.get_help())
         raise typer.Exit(0)
 
-    cfg = _config(workdir)
+    cfg = _runnable(workdir, chat=True, embed=True)
     err.print("[dim]ingesting…[/dim]")
     pipeline.ingest(input_dir, cfg)
     err.print("[dim]enriching…[/dim]")

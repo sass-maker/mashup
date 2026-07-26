@@ -22,6 +22,9 @@ transcribe = ["mlx-whisper>=0.4.2"]
 # gateway-only install stays light, but present in the dev group below so a
 # plain `uv sync` gets a working default.
 local = ["torch>=2.4.0", "transformers>=4.44.0"]
+# In-process chat for enrichment. Apple silicon only, which is why the chat
+# backend defaults to the gateway everywhere else.
+localchat = ["mlx-lm>=0.28.0; sys_platform == 'darwin' and platform_machine == 'arm64'"]
 
 [project.scripts]
 mashup = "mashup.cli:app"
@@ -37,6 +40,7 @@ dev = [
     "ruff>=0.8.0",
     "torch>=2.4.0",
     "transformers>=4.44.0",
+    "mlx-lm>=0.28.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
 
 [tool.uv.build-backend]

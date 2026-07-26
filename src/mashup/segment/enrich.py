@@ -9,13 +9,13 @@ written around those rather than around tidy summaries.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable, Iterable, Sequence
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from pydantic import ValidationError
 
-from mashup.gateway import Gateway, GatewayError
+from mashup.chat import ChatModel
 from mashup.models import Role, Segment, SegmentMeta
 
 logger = logging.getLogger(__name__)
@@ -48,9 +48,13 @@ For each item return:
 - can_open: true only if this works as the very FIRST thing a viewer sees, \
 with no prior context at all
 - can_end: true only if this lands as a final beat rather than trailing off
-- entities: recurring proper names, running gags and catchphrases, verbatim \
-and lowercase; these are matched across recordings, so prefer the exact \
-recurring wording over a paraphrase
+- entities: ONLY named things a later clip could call back to — people's \
+names, place names used as a running joke, recurring catchphrases. Lowercase, \
+verbatim. This is NOT a topic list and NOT keyword extraction. Exclude \
+subjects, activities, descriptions, numbers and anything you already put in \
+topic. If the segment names nobody and repeats no catchphrase, return []. \
+Example: for "Bettina says her husband Arresti wastes money on cooking", \
+entities are ["bettina", "arresti"] — NOT ["wastes money", "cooking"]
 
 Return every item you were given, in the same order, echoing its id."""
 
@@ -71,7 +75,7 @@ _ROLES = {r.value for r in Role}
 
 def enrich_segments(
     segments: list[Segment],
-    gw: Gateway,
+    chat: ChatModel,
     *,
     concurrency: int = 4,
     progress: Callable[[int, int], None] | None = None,
@@ -84,25 +88,34 @@ def enrich_segments(
     context = _context_windows(segments)
     batches = [segments[i : i + batch_size] for i in range(0, len(segments), batch_size)]
     results: dict[str, SegmentMeta] = {}
-    done = 0
-    total = len(segments)
-
     failed_batches = 0
-    with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
-        futures = {pool.submit(_enrich_batch, batch, gw, context): batch for batch in batches}
-        for future in as_completed(futures):
-            try:
-                results.update(future.result())
-            except GatewayError:
-                # One unroutable batch must not discard the whole archive. A
-                # 727-segment run died at 82% this way; the segments it did
-                # enrich were all lost. Those left without metadata keep the
-                # neutral default and are retried on the next `enrich`, which
-                # is cheap because completed batches are cached on disk.
+    done = 0
+    width = max(1, concurrency)
+
+    # Hand the backend a window of prompts at a time and let it parallelise
+    # its own way — concurrent HTTP for the gateway, one batched forward pass
+    # for a local model. A window rather than everything at once so a long run
+    # can report progress; local enrichment of a full archive takes minutes,
+    # and a single callback at the end would be no use at all.
+    for start in range(0, len(batches), width):
+        window = batches[start : start + width]
+        replies = chat.chat_json_many(
+            [_messages_for(batch, context) for batch in window],
+            schema_hint=SCHEMA_HINT,
+            concurrency=width,
+        )
+        for batch, reply in zip(window, replies, strict=True):
+            if reply is None:
+                # One bad batch must not discard the whole archive. A
+                # 727-segment run died at 82% this way and lost everything it
+                # had enriched. These segments keep the neutral default and
+                # are retried by the next `enrich`, which skips what is done.
                 failed_batches += 1
-            done += len(futures[future])
-            if progress is not None:
-                progress(done, total)
+                continue
+            results.update(_batch_to_meta(batch, reply))
+        done += sum(len(batch) for batch in window)
+        if progress is not None:
+            progress(done, len(segments))
 
     if failed_batches:
         logger.warning(
@@ -114,14 +127,16 @@ def enrich_segments(
     return [seg.model_copy(update={"meta": results.get(seg.id, SegmentMeta())}) for seg in segments]
 
 
-def _enrich_batch(
-    batch: Sequence[Segment], gw: Gateway, context: dict[str, tuple[str, str]]
-) -> dict[str, SegmentMeta]:
-    messages = [
+def _messages_for(
+    batch: Sequence[Segment], context: dict[str, tuple[str, str]]
+) -> list[dict[str, str]]:
+    return [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": _render_batch(batch, context)},
     ]
-    raw = gw.chat_json(messages, schema_hint=SCHEMA_HINT)
+
+
+def _batch_to_meta(batch: Sequence[Segment], raw: Any) -> dict[str, SegmentMeta]:
     items = _as_items(raw)
     by_id = {str(item.get("id")): item for item in items if isinstance(item, dict)}
 
@@ -174,7 +189,19 @@ def _coerce(item: dict[str, Any]) -> dict[str, Any]:
             data[field] = [str(v).strip() for v in value if str(v).strip()]
     if isinstance(data.get("topic"), list):
         data["topic"] = [t.lower() for t in data["topic"]]
+    if isinstance(data.get("entities"), list):
+        data["entities"] = [e for e in (e.lower() for e in data["entities"]) if _is_entity(e)]
     return data
+
+
+# A number is never something a later clip calls back to, but models keep
+# offering ages, years and quiz answers as entities. Cheap to reject here, and
+# it applies whichever backend produced the item.
+_NUMERIC = re.compile(r"^[\d\s.,:%$£€/-]+$")
+
+
+def _is_entity(value: str) -> bool:
+    return bool(value) and not _NUMERIC.match(value)
 
 
 def _context_windows(segments: Iterable[Segment]) -> dict[str, tuple[str, str]]:
