@@ -259,8 +259,33 @@ downscales the entire render.
    experiment returns null for reasons that have nothing to do with the
    software. A corpus is fit for purpose here when ordering *can* matter
    (setup/payoff, energy range, thematic build), sources are genuinely
-   heterogeneous, licences are clean, and several briefs clear the noise floor
-   — which `mashup coverage` now measures directly.
+   heterogeneous, and several briefs clear the noise floor — which
+   `mashup coverage` now measures directly. Provenance is no longer a corpus
+   constraint (see Why/What); it is an upload decision.
+
+   **Direction wanted: comedy shows.** Consistent with the original target
+   domain rather than a change of course. Notes for whoever picks this up:
+
+   - **Comedy podcasts fit the pipeline best.** Two to three hours per episode,
+     so ten episodes out-yield thirty Prelinger films; real bits with setup and
+     payoff, which is the structure the planner is meant to find; different
+     hosts and guests across shows, so genuinely heterogeneous; auto-captions
+     available, so the transcription stage stays skipped.
+   - **Comedy is also the hardest case for this objective, and that is worth
+     knowing before blaming the planner.** Every signal the pipeline has is
+     derived from text — summary, topics, role, energy, entities, embeddings.
+     Timing, delivery, silence and the performance carry most of a laugh and
+     none of them survive into the transcript. A flat result on comedy may mean
+     the objective cannot see the thing that makes it funny, rather than that
+     ordering does not matter.
+   - **Broadcast comedy is among the most aggressively Content ID'd material**
+     on YouTube. Fine for developing locally; a per-upload decision for the
+     channel, and more likely than average to draw a block rather than a
+     monetize claim.
+   - Prelinger was investigated and set aside: 1,871 of its 10,369 items carry
+     an affixed CC Public Domain Dedication and ship with captions, but the
+     films are short with flat narration, and its one real advantage — clean
+     provenance — stopped being the binding constraint.
 
 1. **Watch the output.** Nobody has watched a generated mashup and said whether
    it is any good. `study/matched-couples/A.mp4` and `B.mp4` are 6:39 each,
