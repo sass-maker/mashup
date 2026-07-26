@@ -9,8 +9,10 @@ purpose — they live in `src/mashup/experiment.py` rather than in a spreadsheet
 someone fills in by hand.
 
 > **Status:** the harness and its `mashup experiment`, `mashup evaluate`, and
-> `mashup churn` commands are written and unit-tested. It has not yet been run
-> against a real archive. See [`PROJECT_STATUS.md`](../PROJECT_STATUS.md).
+> `mashup churn` commands are written and unit-tested. A corrected five-video
+> real-archive set was generated fully locally on 2026-07-26; five-viewer
+> ratings and evaluation remain outstanding. See
+> [`PROJECT_STATUS.md`](../PROJECT_STATUS.md).
 
 ## The five conditions
 

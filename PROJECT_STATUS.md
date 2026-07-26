@@ -78,8 +78,10 @@ content domain at a time (comedy is the target).
   that preferred short sequences. See "Second run" below.
 - 2026-07-26 — enrichment moved to a local mlx model, the last stage that
   needed the network. The whole pipeline now runs offline on Apple silicon.
-- Next — exercise the editor against real media, regenerate the blind set,
-  then run the blind comparison.
+- 2026-07-26 — regenerated all five blind conditions from the fully local
+  archive in `study/localchat-2026-07-26`; each EDL, sidecar, and MP4 completed.
+- Next — exercise the editor against real media, then run the five-viewer blind
+  comparison without opening `KEY.json`.
 
 ## Products
 
@@ -160,19 +162,13 @@ content domain at a time (comedy is the target).
 
 ### Planned
 
-2. **Regenerate the blind set and recruit five viewers.** The rendered set in
-   `experiment/` predates the calibration and callback fixes and must be
-   rebuilt before anyone watches it. Once rebuilt, this is the only step that
-   can actually validate the thesis; everything below is a proxy for it.
-3. `chronological` still finishes 325s against a 420s target (was 214s). The
-   `can_open` filter leaves only three valid seeds in a 40-clip pool, the
-   earliest at episode 3 of 20, which caps how much archive the monotonic
-   constraint can spend. Widening the seed set is the obvious next move —
-   `term_context_completeness` already penalises a bad opener, so the hard
-   filter may be redundant.
-4. Cross-archive validation. The kill criterion is explicitly cross-archive; a
+2. **Recruit five viewers.** The corrected fully local blind set is ready in
+   `study/localchat-2026-07-26`; keep `KEY.json` withheld, collect the supplied
+   ratings sheet, then run `mashup evaluate`. This is the only step that can
+   actually validate the thesis; everything below is a proxy for it.
+3. Cross-archive validation. The kill criterion is explicitly cross-archive; a
    good Groucho result proves considerably less than it appears to.
-5. **The callback strategy plans over a different pool than the other two.**
+4. **The callback strategy plans over a different pool than the other two.**
    Necessary — MMR removes the material callbacks need — but a confound that
    has to be reported alongside any blind-comparison result.
 
@@ -347,6 +343,12 @@ Latent, not currently biting: alias fragmentation defeats the boilerplate
 filter. The 5% cut drops `groucho` (66) and `desoto` (53) but not
 `groucho marx` (28) or `desoto plymouth` (28). Measured zero spurious links in
 the current plans, so it is recorded rather than fixed.
+
+After the final five failed JSON segments were retried, `mashup experiment`
+completed without a gateway key and wrote five playable h264/AAC MP4s plus
+sidecars and EDLs to `study/localchat-2026-07-26`. Durations span 326–450
+seconds and every file is non-empty. `KEY.json` remains withheld; this proves
+the real-archive machinery, not viewer preference.
 
 ## Operational notes
 

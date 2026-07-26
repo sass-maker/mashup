@@ -49,7 +49,7 @@
 - [x] Rating sheet + criteria analysis
 - [x] Mechanical timeline-churn metric against the kill criterion
 - [x] `mashup experiment` / `evaluate` / `churn` CLI commands
-- [ ] Run against the Groucho archive end to end
+- [x] Run against the Groucho archive end to end
 - [ ] Recruit five viewers, run the blind comparison, record the result
 
 ## 8. Verification
