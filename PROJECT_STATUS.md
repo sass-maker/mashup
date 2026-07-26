@@ -95,7 +95,8 @@ content domain at a time (comedy is the target).
 ## Feasibility audit (2026-07-26)
 
 Four mechanical tests of the central claim, run before spending human hours.
-Scripts were throwaway; the findings that survived are now in code and tests.
+The throwaway scripts are now `mashup order-test` (`--sweep` to choose a study
+arm, `--study` to audit a set that already exists).
 
 **1. The study prompt had no material behind it.** Nonsense text scores 0.434
 against this archive over its ten best matches. `"seven minutes on airline
@@ -128,7 +129,7 @@ Building the matched pair immediately exposed a latent bug — `plan` charged a
 
 - `mashup` CLI (`uv run mashup`) — the whole pipeline. Subcommands: `ingest`,
   `enrich`, `embed`, `models`, `status`, `coverage`, `build`, `preview`,
-  `render`, `serve`, `experiment`, `evaluate`, `churn`;
+  `render`, `serve`, `order-test`, `experiment`, `evaluate`, `churn`;
   the bare invocation `mashup --input … --prompt …` runs everything in one
   shot. On Apple silicon no subcommand needs a gateway key.
 - `mashup serve` — loopback-only local editor server (stdlib `http.server`)

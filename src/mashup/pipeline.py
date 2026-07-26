@@ -193,7 +193,7 @@ def result_to_edl(
 
 
 @dataclass
-class _Planning:
+class Planning:
     """Everything the planners share, built once per run."""
 
     store: Store
@@ -210,7 +210,7 @@ class _Planning:
 
 
 @contextmanager
-def _planning_session(prompt: str, cfg: Config, *, target: float, pool: int) -> Iterator[_Planning]:
+def planning_session(prompt: str, cfg: Config, *, target: float, pool: int) -> Iterator[Planning]:
     """Open the store, embed the brief, retrieve, and calibrate.
 
     Shared by every entry point that plans, so a matched-set run and a
@@ -267,7 +267,7 @@ def _planning_session(prompt: str, cfg: Config, *, target: float, pool: int) -> 
         callback_pool = retriever.entity_expansion(
             candidates, query_vec, common=ctx.common_entities
         )
-        yield _Planning(
+        yield Planning(
             store=store,
             request=request,
             ctx=ctx,
@@ -286,7 +286,7 @@ def check_coverage(prompt: str, cfg: Config) -> Coverage:
     cannot serve still produces five confident-looking variants, all of them
     built from clips no better matched than random text would have found.
     """
-    with _planning_session(prompt, cfg, target=1.0, pool=1) as session:
+    with planning_session(prompt, cfg, target=1.0, pool=1) as session:
         return session.coverage
 
 
@@ -302,7 +302,7 @@ def make_mashups(
     crossfade: float = 0.0,
 ) -> list[EDL]:
     """Plan one EDL per strategy from an already-enriched archive."""
-    with _planning_session(prompt, cfg, target=target, pool=pool) as session:
+    with planning_session(prompt, cfg, target=target, pool=pool) as session:
         ctx, retriever = session.ctx, session.retriever
         results = [plan(s, session.pool_for(s), ctx, retriever.pairwise) for s in strategies]
         if include_baselines:
@@ -378,7 +378,7 @@ def make_matched_pair(
     about endings, so is that choice, which is why both percentiles are
     recorded rather than just the winner.
     """
-    with _planning_session(prompt, cfg, target=target, pool=pool) as session:
+    with planning_session(prompt, cfg, target=target, pool=pool) as session:
         ctx, retriever = session.ctx, session.retriever
         planned = plan(strategy, session.pool_for(strategy), ctx, retriever.pairwise)
 

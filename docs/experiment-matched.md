@@ -55,7 +55,23 @@ the winner.
 
 ## Check the planner is ahead before recruiting anyone
 
-`KEY.json` carries an `order_stats` block, and the CLI prints it:
+```bash
+uv run mashup order-test --prompt "how couples met and got married"
+uv run mashup order-test --prompt "..." --sweep --pools 40,80,160
+uv run mashup order-test --study study/matched-01
+```
+
+This is the mechanical proxy for the whole study, and it costs seconds rather
+than six people's evening. It shuffles a clip set many times and reports where
+the planner's own order lands. It exits non-zero when the planner is not
+confidently ahead.
+
+`--study` audits a set that already exists: shared material between variants,
+each variant's percentile, and which terms fail to discriminate. It names the
+conditions, so it is an operator tool — do not run it on a rater's screen.
+
+`KEY.json` carries the same numbers in an `order_stats` block, and the CLI
+prints them at generation time:
 
 ```
 planner order scores 0.6816, ahead of 100% of 200 arbitrary orders
@@ -78,9 +94,27 @@ recruit. On `"how couples met and got married"` at 420s:
 | 60 | chronological | 0.6753 | 0.6351 | 100.0% |
 | 120 | escalation | 0.6651 | 0.5559 | 100.0% |
 
+Percentile ties are broken on the gap, so `--sweep` names escalation at pool
+120 (+0.1092) over pool 40 (+0.1073). That difference is noise; the shipped set
+uses pool 40 because it is the default and the two are indistinguishable.
+
 Choosing on the objective before any human has rated anything is
 pre-registration, not p-hacking: the objective is the stated hypothesis, and
 the outcome being selected on has not been observed yet. Record the choice.
+
+### Two readings that look like signal and are not
+
+**A baseline's percentile is the ending penalty, not ordering.** The `semantic`
+and `random` profiles are relevance plus duration — 100% order-invariant. A
+shuffle cannot change any of their terms; it can only change whether the
+sequence happens to end on a `can_end` clip. `semantic` scoring at the 77.5th
+percentile in an audit is that 6% penalty and nothing else. `order-test` labels
+these rows.
+
+**Identical clip sets make the order-invariant terms identical.** Auditing a
+matched pair reports `relevance`, `non_repetition`, `duration_fit` and
+`source_diversity` at spread 0.000. That is the design working, not four dead
+terms, and the audit says so.
 
 ## Reading the result
 

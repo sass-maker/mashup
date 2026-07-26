@@ -20,6 +20,7 @@ from mashup.models import ScoreTerms, Segment
 from mashup.plan.score import (
     WEIGHT_PROFILES,
     PlanContext,
+    profile_for,
     score_sequence,
     total_score,
 )
@@ -302,7 +303,7 @@ def plan_random(
 def rescore(result: PlanResult, ctx: PlanContext, sim: SimFn) -> PlanResult:
     """Recompute after a human edits the timeline, or after a reorder."""
     terms = score_sequence(result.sequence, ctx, sim)
-    strategy = result.strategy if result.strategy in WEIGHT_PROFILES else "semantic"
+    strategy = profile_for(result.strategy)
     return replace(
         result,
         terms=terms,

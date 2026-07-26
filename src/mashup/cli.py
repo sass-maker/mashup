@@ -12,6 +12,7 @@ from rich.table import Table
 from mashup import pipeline
 from mashup.config import ConfigError, load_config
 from mashup.models import EDL
+from mashup.ordertest import DEFAULT_SHUFFLES
 from mashup.pipeline import DEFAULT_POOL
 from mashup.plan.prompt import parse_duration
 from mashup.render import edl_to_transcript, load_edl, render, save_edl
@@ -450,6 +451,174 @@ def experiment(
         f"Hand raters the .mp4 files only: the .json and .srt name the condition.\n"
         f"Then run: mashup evaluate {output}"
     )
+
+
+@app.command(name="order-test")
+def order_test(
+    prompt: Annotated[str | None, typer.Option("--prompt", "-p")] = None,
+    study: Annotated[
+        Path | None,
+        typer.Option("--study", help="Audit an existing blind set instead of planning a new one"),
+    ] = None,
+    duration: Annotated[float, typer.Option("--duration", "-d")] = 420.0,
+    strategy: Annotated[str, typer.Option("--strategy")] = "escalation",
+    pool: Annotated[int, typer.Option("--pool")] = DEFAULT_POOL,
+    sweep_it: Annotated[
+        bool, typer.Option("--sweep", help="Every strategy at every pool, to choose a study arm")
+    ] = False,
+    pools: Annotated[
+        str, typer.Option("--pools", help="Comma-separated pools for --sweep")
+    ] = "40,80,160",
+    shuffles: Annotated[int, typer.Option("--shuffles")] = DEFAULT_SHUFFLES,
+    workdir: WORKDIR_OPT = None,
+) -> None:
+    """Does the planner's order beat an arbitrary one? Run before recruiting.
+
+    Shuffles a clip set many times and reports where the planner's own order
+    lands. Near the median means the planner did not order those clips well,
+    and a blind study built on it would test the planner rather than the
+    thesis.
+    """
+    from mashup import ordertest
+
+    cfg = _runnable(workdir, embed=True)
+    if study is not None:
+        _audit_study(study, cfg, shuffles)
+        return
+    if prompt is None:
+        err.print("[red]need --prompt, or --study to audit an existing set[/red]")
+        raise typer.Exit(2)
+
+    target = parse_duration(prompt, duration)
+    if not sweep_it:
+        null = ordertest.test_configuration(
+            prompt, cfg, target=target, strategy=strategy, pool=pool, shuffles=shuffles
+        )
+        _show_null(f"{strategy} @ pool {pool}", null)
+        raise typer.Exit(0 if null.confident else 1)
+
+    try:
+        pool_list = tuple(int(p) for p in pools.split(",") if p.strip())
+    except ValueError as exc:
+        err.print(f"[red]--pools must be comma-separated integers: {pools!r}[/red]")
+        raise typer.Exit(2) from exc
+
+    table = Table(box=None)
+    for col, just in (
+        ("pool", "right"),
+        ("strategy", "left"),
+        ("clips", "right"),
+        ("planned", "right"),
+        ("median", "right"),
+        ("pctile", "right"),
+        ("gap", "right"),
+    ):
+        table.add_column(col, justify=just)
+    results = ordertest.sweep(
+        prompt,
+        cfg,
+        target=target,
+        strategies=pipeline.AI_STRATEGIES,
+        pools=pool_list,
+        shuffles=shuffles,
+        progress=lambda p, s, _n: err.print(f"[dim]  planned {s} @ pool {p}[/dim]"),
+    )
+    for pool_used, null in results:
+        table.add_row(
+            str(pool_used),
+            null.strategy,
+            str(null.clips),
+            f"{null.actual:.4f}",
+            f"{null.median:.4f}",
+            f"{null.percentile:.1f}%",
+            f"{null.gap:+.4f}",
+        )
+    console.print(table)
+
+    best = ordertest.best_of(results)
+    if best is None:
+        return
+    best_pool, best_null = best
+    console.print(
+        f"\n[bold]{best_null.strategy} at pool {best_pool}[/bold] — ahead of "
+        f"{best_null.percentile:.0f}% of arbitrary orders, {best_null.gap:+.4f} on the median."
+    )
+    console.print(
+        "[dim]Choosing on the objective before anyone has rated anything is\n"
+        "pre-registration, not p-hacking. Record the choice.[/dim]"
+    )
+
+
+def _show_null(label: str, null) -> None:
+    console.print(
+        f"[bold]{label}[/bold]  {null.clips} clips, {len(null.scores)} shuffles\n"
+        f"  planner order   {null.actual:.4f}\n"
+        f"  median shuffle  {null.median:.4f}\n"
+        f"  worst / best    {null.worst:.4f} / {null.best:.4f}\n"
+        f"  percentile      {null.percentile:.1f}%   gap {null.gap:+.4f}"
+    )
+    blind = null.order_blind_weight()
+    console.print(f"  [dim]{blind:.0%} of this objective cannot see order at all[/dim]")
+    if not null.confident:
+        err.print(
+            "[yellow]not confidently ahead of chance — a study on this configuration\n"
+            "would be testing the planner, not the thesis.[/yellow]"
+        )
+
+
+def _audit_study(study: Path, cfg, shuffles: int) -> None:
+    from mashup import ordertest
+
+    err.print("[yellow]this reveals which variant is which — not for a rater's screen[/yellow]")
+    try:
+        audit = ordertest.audit_study(study, cfg, shuffles=shuffles)
+    except (OSError, RuntimeError, ValueError) as exc:
+        err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+
+    console.print(f"[bold]{study}[/bold]  prompt {audit.prompt!r}\n")
+
+    console.print("[bold]shared material[/bold]  (Jaccard on clip sets)")
+    for (a, b), jac in sorted(audit.overlap.items(), key=lambda kv: -kv[1]):
+        console.print(f"  {a:<15}{b:<15}{jac:>6.2f}")
+    isolated = audit.isolated()
+    if isolated:
+        names = ", ".join(f"{c} ({v:.2f})" for c, v in isolated)
+        err.print(
+            f"\n[yellow]{names} share almost nothing with any other variant, so a\n"
+            "preference involving them is about selection, not ordering.\n"
+            "See `experiment --matched`.[/yellow]"
+        )
+
+    blind = set(audit.order_blind())
+    console.print("\n[bold]planner order vs arbitrary orders of the same clips[/bold]")
+    for cond, null in audit.nulls.items():
+        note = "  [dim]<- ending penalty only[/dim]" if cond in blind else ""
+        console.print(
+            f"  {cond:<15}{null.actual:>8.4f}  median {null.median:.4f}  "
+            f"{null.percentile:>5.1f}%{note}"
+        )
+    if blind:
+        console.print(
+            f"\n[dim]{', '.join(sorted(blind))} are scored under a profile with no "
+            "order-sensitive terms.\nA shuffle can only change whether they end on a "
+            "`can_end` clip, so their\npercentile is the 6% ending penalty, not evidence "
+            "about ordering.[/dim]"
+        )
+
+    dead = audit.dead_terms()
+    if dead and audit.is_matched():
+        console.print(
+            "\n[dim]every variant holds the same clips, so the order-invariant terms\n"
+            "are identical by construction rather than by defect.[/dim]"
+        )
+    elif dead:
+        console.print("\n[bold]terms that barely vary across conditions[/bold]")
+        for term, spread in dead:
+            console.print(f"  {term:<24} spread {spread:.3f}")
+        console.print("\n[bold]share of each score from those terms[/bold]")
+        for cond in audit.variants:
+            console.print(f"  {cond:<15}{audit.constant_share(cond):>6.0%}")
 
 
 @app.command()

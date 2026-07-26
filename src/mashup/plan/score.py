@@ -180,6 +180,15 @@ WEIGHT_PROFILES: dict[str, dict[str, float]] = {
 }
 
 
+def profile_for(strategy: str) -> str:
+    """The weight profile a strategy's output is scored under.
+
+    `random` has no profile of its own: it is a control, and scoring it under
+    the baseline's weights is what makes it comparable to `semantic`.
+    """
+    return strategy if strategy in WEIGHT_PROFILES else "semantic"
+
+
 def _clamp01(x: float) -> float:
     return max(0.0, min(1.0, x))
 

@@ -29,8 +29,8 @@ sequencing actually beats retrieve-and-join.
   `timeline_churn` measures the latter.
 - [experiment-matched.md](experiment-matched.md) — the two-arm design that
   isolates sequencing by holding the clip set fixed, why its comparator is the
-  median shuffle, and why six viewers can only reach significance at
-  unanimity.
+  median shuffle, why six viewers can only reach significance at unanimity,
+  and `mashup order-test` — the mechanical proxy you run before recruiting.
 
 ## Specification
 
