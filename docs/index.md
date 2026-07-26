@@ -33,8 +33,8 @@ sequencing actually beats retrieve-and-join.
   and `mashup order-test` — the mechanical proxy you run before recruiting.
 - [retrospective-2026-07-26.md](retrospective-2026-07-26.md) — three
   sessions of apparatus-building and no human judgments: a claim walked
-  back, the study's 12% power, and where the restated goal diverges from
-  what the code assumes.
+  back, the study's 12% power, and which coverage gaps the restated goal
+  brings into focus.
 
 ## Specification
 

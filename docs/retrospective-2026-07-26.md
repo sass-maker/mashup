@@ -66,25 +66,31 @@ human noticing, no planner wins and the null says nothing about the thesis.
 This is testable in forty minutes by one person watching matched pairs, and it
 should have been the first thing done rather than the last.
 
-## The goal moved, and the repo has not
+## The goal did not move; the emphasis did
 
-The stated goal is now: **give it a set of unrelated videos and get back one
-coherent, delightful video.** The repo describes something narrower — a single
-creator's own archive, comedy, with sequencing as a thesis to prove.
+Described afresh, the goal is: **give it a set of source videos and get back
+one coherent, delightful video.** That is the same goal the repo was built
+for. Whether the sources are one creator's back catalogue or a folder of
+unrelated downloads is provenance, not function — ingestion reads a directory
+of media files and does not care.
 
-What that changes:
+I initially wrote this up as a pivot. It is not one, and treating it as one
+would have licensed a lot of unnecessary rework.
 
-- **Selection matters at least as much as ordering.** The thesis frames
-  retrieval as the strawman. For unrelated sources, choosing what to extract is
-  most of the work.
-- **"A delight" is not "statistically significant."** A real-but-small ordering
-  effect is fine for a product and fatal for a thesis-gated project. The
-  framing in `PROJECT_STATUS.md` — "a validation experiment before it is a
-  product" — is what blocks shipping.
-- **Cross-source coherence is untested.** Every run so far used one show: one
+What the restatement does sharpen:
+
+- **"A delight" is the target, not "statistically significant."** A
+  real-but-small ordering effect is fine for a product and fatal for a
+  thesis-gated project. "A validation experiment before it is a product" is
+  what blocks shipping, and it is a framing choice rather than a fact.
+- **Selection matters at least as much as ordering.** The thesis casts
+  retrieval as the strawman to beat. If the output has to be a delight, what
+  gets extracted is at least half the work, and no current experiment isolates
+  it.
+- **Heterogeneous sources are untested.** Every run so far used one show: one
   host, one format, one audio chain. `required_context` and `can_open` are
   judged per clip with no notion of what a viewer arriving from a *different
-  video* knows.
+  video* knows. This is a coverage gap, not a redirection.
 
 What it does **not** change, checked rather than assumed:
 

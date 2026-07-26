@@ -4,13 +4,12 @@ Last updated: 2026-07-26
 
 ## Why / What
 
-**The goal (restated 2026-07-26):** hand it a set of unrelated videos and get
-back one coherent video that is a delight to watch — extracting the good parts
-of each and joining them well. Not a supercut, not a search result.
-
-The original framing was narrower — one creator's own archive, comedy — and
-most of the code still assumes it. The gap between the two is tracked in
-[`docs/retrospective-2026-07-26.md`](docs/retrospective-2026-07-26.md).
+Hand it a set of source videos and get back one coherent video that is **a
+delight to watch** — extracting the good parts of each and joining them well.
+Not a supercut, not a search result. Whether those sources are one creator's
+own back catalogue or a folder of unrelated downloads is a difference in
+provenance, not in what the tool does; ingestion reads a directory of media
+files and is indifferent to where they came from.
 
 The bet is that **ordering is the hard part and the valuable part**. That bet
 is falsifiable, so the repo builds the tool *and* the blind experiment that
@@ -22,8 +21,9 @@ and impossible to prove with the study as designed. Three sessions have gone
 into the apparatus and produced zero human judgments. The next action must
 produce a human judgment, not a better instrument.
 
-**Users:** solo creators with a single-owner archive — stand-ups, podcasters,
-long-running YouTubers — plus the owner running the validation study.
+**Users:** anyone with a pile of source video they want one good cut out of —
+stand-ups, podcasters, long-running YouTubers working their own back
+catalogue, or someone assembling from a folder of collected clips.
 
 **IN scope:** archive ingestion with local transcription; structure-aware
 segmentation; LLM segment understanding; multi-term sequence planning in three
