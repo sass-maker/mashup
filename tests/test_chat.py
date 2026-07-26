@@ -7,6 +7,7 @@ anywhere, because that is where the bugs that would corrupt an archive live.
 
 from __future__ import annotations
 
+import builtins
 from pathlib import Path
 from typing import Any
 
@@ -65,6 +66,19 @@ def test_constructing_a_local_chat_loads_nothing() -> None:
     """A 2GB model must not load just because a config was read."""
     chat = LocalChat("mlx-community/does-not-exist")
     assert chat._model is None
+
+
+def test_missing_mlx_is_reported_as_a_chat_error(monkeypatch) -> None:
+    real_import = builtins.__import__
+
+    def import_without_mlx(name, *args, **kwargs):
+        if name == "mlx_lm":
+            raise ImportError("mlx is unavailable")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_without_mlx)
+    with pytest.raises(ChatError, match="local chat needs mlx-lm"):
+        LocalChat().chat_json_many([convo(0)], schema_hint="[]")
 
 
 # ---- the batching contract -----------------------------------------------

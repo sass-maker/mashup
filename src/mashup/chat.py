@@ -118,9 +118,10 @@ class LocalChat:
         conversations = list(conversations)
         if not conversations:
             return []
-        from mlx_lm import batch_generate
 
         model, tokenizer = self._load()
+        from mlx_lm import batch_generate
+
         out: list[JSONValue | None] = [None] * len(conversations)
         width = max(1, concurrency)
 
