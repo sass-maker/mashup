@@ -21,9 +21,28 @@ and impossible to prove with the study as designed. Three sessions have gone
 into the apparatus and produced zero human judgments. The next action must
 produce a human judgment, not a better instrument.
 
-**Users:** anyone with a pile of source video they want one good cut out of —
-stand-ups, podcasters, long-running YouTubers working their own back
-catalogue, or someone assembling from a folder of collected clips.
+**Users:** one operator — the author — publishing finished cuts to their own
+YouTube channel. Decided 2026-07-26: the software is not released to anyone
+else, so there is no second operator to design for.
+
+Three consequences, recorded because they were conflated once already:
+
+- **The author is the only judge of the tool.** Most of the validation
+  apparatus exists to make a subjective call defensible to other people. Blind
+  labelling, viewer counterbalancing, sign tests and significance thresholds
+  all answer "how do I convince someone else". With one operator and one taste
+  the honest loop is: watch it, say whether it is good, change something. The
+  underpowered-study problem dissolves rather than being solved.
+- **The corpus is not licence-constrained; the uploads are.** Development
+  happens locally and nothing leaves the machine, so pick source material on
+  whether it tests the thesis. What actually goes up on the channel is a
+  separate decision made per video — see D below.
+- **No third-party rights burden.** Not shipping the software means no other
+  operator can point it at anything, which is the exposure the clipping tools
+  handle with terms of service.
+
+Because there *is* a channel, the retention loop in C is a real future step
+rather than a hypothetical.
 
 **IN scope:** archive ingestion with local transcription; structure-aware
 segmentation; LLM segment understanding; multi-term sequence planning in three
@@ -307,15 +326,23 @@ range-serves the media. Matched pairs supply the baseline a retention curve
 otherwise lacks: same clips, different order, compare the two curves at clip
 boundaries.
 
-**D. Sourcing is constrained by licence, not by attribution.** Crediting a
-source discharges a CC-BY condition; it does not create a licence, and it is
-not a fair-use factor. Content ID matches automatically regardless of credits,
-and compilations sit at the weak end of fair use because they substitute for
-the original. So the corpus has to be public domain, CC0, or CC-BY — which
-`scripts/fetch_archive.py` already enforces, rejecting `-nd` and anything
-unrecognised. YouTube's Creative Commons filter is a legitimate route to
-"a bunch of different YouTube videos" and is the natural extension of that
-gate. See [`scripts/README.md`](scripts/README.md#licence-position).
+**D. Licence binds at publication, not during development.** Given the scope
+above, only the middle row is live — and it is live for every upload:
+
+| situation | what actually applies |
+|---|---|
+| building a corpus locally | nothing leaves the machine. Downloading from YouTube breaks their *terms of service* — a contract matter, not copyright — and that is the only live issue. |
+| publishing a cut | Content ID matches. Rightsholders choose block, **monetize** or track; monetize is common, meaning revenue redirects and the video stays up. |
+| shipping to other people | not happening — the software is not released. This is the exposure the clipping tools (Opus Clip, Descript, Vizard) handle by operating only on content **the user already owns**, with the rights burden in their terms. |
+
+So: develop against whatever material is best, and decide per upload what the
+channel can carry. A claim is usually a revenue redirect rather than a
+takedown, but repeat blocks and strikes accumulate against a channel, so the
+per-video call is worth making deliberately rather than by default.
+
+Attribution is not a substitute for any of this: crediting a source discharges
+a CC-BY condition, it does not create a licence, and it is not a fair-use
+factor. See [`scripts/README.md`](scripts/README.md#licence-position).
 
 5. `Source.recorded_at` is never populated; ordinals proxy chronology. Real
    creator archives may need a filename date convention parsed.
