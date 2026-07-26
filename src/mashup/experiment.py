@@ -24,7 +24,7 @@ from pathlib import Path
 
 from mashup.config import Config
 from mashup.models import EDL
-from mashup.pipeline import make_mashups
+from mashup.pipeline import DEFAULT_POOL, make_mashups
 from mashup.render import save_edl
 
 CONDITIONS = ("random", "semantic", "chronological", "escalation", "callback")
@@ -52,8 +52,16 @@ def run_experiment(
     target: float,
     seed: int = 0,
     snap: bool = True,
+    pool: int = DEFAULT_POOL,
 ) -> list[Blind]:
-    """Generate all five conditions under blind labels."""
+    """Generate all five conditions under blind labels.
+
+    `pool` matters more than it looks. A pool too small for the archive starves
+    the chronological strategy in particular — it can only move forward through
+    archive order, so it runs out of valid continuations and returns a short
+    sequence. Unequal runtimes across the five variants leak the blinding, so
+    the pool is recorded in KEY.json alongside the mapping.
+    """
     outdir.mkdir(parents=True, exist_ok=True)
     edls = make_mashups(
         prompt,
@@ -62,6 +70,7 @@ def run_experiment(
         strategies=AI_CONDITIONS,
         include_baselines=True,
         snap=snap,
+        pool=pool,
     )
     by_condition = {e.strategy: e for e in edls}
     missing = [c for c in CONDITIONS if c not in by_condition]
@@ -85,6 +94,7 @@ def run_experiment(
                 "prompt": prompt,
                 "target_duration": target,
                 "seed": seed,
+                "pool": pool,
                 "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
                 "mapping": {b.label: b.condition for b in blinds},
                 "scores": {b.label: by_condition[b.condition].score for b in blinds},

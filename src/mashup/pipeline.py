@@ -27,6 +27,13 @@ from mashup.store import Store
 
 AI_STRATEGIES = ("chronological", "escalation", "callback")
 
+# Candidate clips retrieved before planning. Not uniformly better when
+# widened: measured on the dev archive it lifts chronological, which can
+# only walk forward through archive order and starves on a small pool, and
+# depresses callback. So it stays a per-run choice rather than a tuned
+# constant.
+DEFAULT_POOL = 40
+
 
 def ingest(
     archive_dir: Path,
@@ -182,7 +189,7 @@ def make_mashups(
     target: float,
     strategies: tuple[str, ...] = AI_STRATEGIES,
     include_baselines: bool = False,
-    pool: int = 40,
+    pool: int = DEFAULT_POOL,
     snap: bool = True,
     crossfade: float = 0.0,
 ) -> list[EDL]:

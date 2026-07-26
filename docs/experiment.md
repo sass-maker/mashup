@@ -49,6 +49,24 @@ uv run mashup churn output/escalation.json study/run-01/escalation.edited.json
 The archive must already be ingested, enriched and embedded — see the
 [README quickstart](../README.md#quickstart).
 
+### Check the runtimes before recruiting anyone
+
+**All five variants must come out about the same length.** They are ranked
+against each other, so an outlier is comparing a different amount of material,
+and a visibly shorter file breaks the blinding before playback starts.
+
+`--pool` is the lever. Chronological is the variant that starves: it can only
+walk forward through archive order, so a pool too small for the archive leaves
+it no valid continuations and it returns early. On the dev archive at the
+default pool of 40 it came back at 322.7s against 445.2s for semantic — a 122s
+spread. At `--pool 160` the same prompt gives a 40s spread.
+
+Widening is not free and not uniform. On a second prompt the same change
+lifted chronological's score from 0.781 to 0.828 while dropping the callback
+strategy's callback term from 0.32 to 0.06. So the default stays at 40, the
+pool used is recorded in `KEY.json`, and choosing it is part of preparing a
+run: plan with `--no-render` first, check the five durations, then render.
+
 ## Blind labelling and the withheld key
 
 `run_experiment` shuffles the five conditions under `random.Random(seed)` and

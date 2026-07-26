@@ -12,6 +12,7 @@ from rich.table import Table
 from mashup import pipeline
 from mashup.config import ConfigError, load_config
 from mashup.models import EDL
+from mashup.pipeline import DEFAULT_POOL
 from mashup.plan.prompt import parse_duration
 from mashup.render import edl_to_transcript, load_edl, render, save_edl
 
@@ -333,6 +334,13 @@ def experiment(
     duration: Annotated[float, typer.Option("--duration", "-d")] = 420.0,
     workdir: WORKDIR_OPT = None,
     seed: Annotated[int, typer.Option("--seed", help="Shuffles the blind labels")] = 0,
+    pool: Annotated[
+        int,
+        typer.Option(
+            "--pool",
+            help="Candidates retrieved before planning; widen if a variant comes back short",
+        ),
+    ] = DEFAULT_POOL,
     do_render: Annotated[bool, typer.Option("--render/--no-render")] = True,
     subtitles: Annotated[str, typer.Option("--subtitles")] = "sidecar",
 ) -> None:
@@ -341,7 +349,7 @@ def experiment(
 
     cfg = _runnable(workdir, embed=True)
     target = parse_duration(prompt, duration)
-    blinds = run_experiment(prompt, cfg, outdir=output, target=target, seed=seed)
+    blinds = run_experiment(prompt, cfg, outdir=output, target=target, seed=seed, pool=pool)
 
     for blind in blinds:
         edl = load_edl(blind.edl_path)

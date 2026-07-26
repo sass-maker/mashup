@@ -80,6 +80,10 @@ content domain at a time (comedy is the target).
   needed the network. The whole pipeline now runs offline on Apple silicon.
 - 2026-07-26 — regenerated all five blind conditions from the fully local
   archive in `study/localchat-2026-07-26`; each EDL, sidecar, and MP4 completed.
+- 2026-07-26 — verifying that set before recruiting viewers found two design
+  faults: an uncounterbalanced viewing order, and a 122s duration spread that
+  leaked the blinding. Both addressed; set regenerated at `--pool 160` as
+  `study/localchat-2026-07-26-pool160`. See "Blind set" below.
 - Next — exercise the editor against real media, then run the five-viewer blind
   comparison without opening `KEY.json`.
 
@@ -350,37 +354,45 @@ sidecars and EDLs to `study/localchat-2026-07-26`. Durations span 326–450
 seconds and every file is non-empty. `KEY.json` remains withheld; this proves
 the real-archive machinery, not viewer preference.
 
-## Blind set readiness (`study/localchat-2026-07-26`)
+## Blind set: ready to rate (`study/localchat-2026-07-26-pool160`)
 
-Prompt "seven minutes on airline travel", seed 0. All five render correctly —
-h264 + aac, 472×360, sidecar SRTs, MP4 durations matching their EDLs.
+Prompt "seven minutes on airline travel", seed 0, `--pool 160`. All five
+render correctly — h264 + aac, 472×360, sidecar SRTs, MP4 durations matching
+their EDLs.
 
-Two design faults found before any viewer was recruited. One is fixed:
+Two design faults were found and fixed before any viewer was recruited.
 
-- **Every viewer was to watch A–E in the same order.** Position effects — the
-  first judged fresh and anchoring the scale, the last judged after half an
-  hour — would have landed entirely on one condition. `write_rating_sheet` now
-  rotates the order per viewer so each variant takes each position once.
-  Carryover is still unbalanced; that needs ten viewers for five variants.
+**Every viewer was to watch A–E in the same order.** Position effects — the
+first judged fresh and anchoring the scale, the last judged after half an hour
+— would have landed entirely on one condition and been indistinguishable from
+preference. The sheet now rotates per viewer, each variant taking each
+position once. Carryover stays unbalanced; that needs ten viewers for five.
 
-One is not, and needs a decision:
+**The variants were unequal in length**, which leaks the blinding and means
+viewers rank different amounts of material:
 
-| | A chrono | B semantic | C random | D callback | E escalation |
-|---|---|---|---|---|---|
-| duration | **322.7s** | 445.2s | 396.3s | 418.6s | 424.3s |
-| clips | 8 | 11 | 10 | 11 | 11 |
+| pool | A chrono | B semantic | C random | D callback | E escalation | spread |
+|---|---|---|---|---|---|---|
+| 40 (first set) | **322.7s** | 445.2s | 396.3s | 418.6s | 424.3s | 122s |
+| 160 (this set) | 416s | 450s | 423s | 413s | 406s | **44s** |
 
-**A is 5:23 against a 7:25 for B — 23% under target, a 122s spread.** Viewers
-ranking "overall" would be comparing unequal lengths, and the shortest variant
-is identifiable before playback, so the blinding leaks. If chronological
-loses, length and ordering cannot be told apart.
+Chronological was the one starving: it can only walk forward through archive
+order, so a small pool leaves it no valid continuations and the duration-band
+fallback returns the best short sequence. A wider pool also widened the
+AI/baseline gap — chronological 0.742 and escalation 0.751 against semantic
+0.535 and random 0.503.
 
-The cause is structural, not a regression: chronological is constrained to
-archive order from a `can_open` seed, and this pool offers too few, so the
-beam exhausts valid continuations and the duration-band fallback returns the
-best short sequence. Options are to re-plan A with a larger pool, re-run the
-set on a prompt where all five reach the band, or run as-is and treat A's
-rank as uninterpretable.
+Widening is not a free win, which is why the default stays at 40. On the
+second prompt it lifted chronological 0.781 → 0.828 but dropped the callback
+strategy's callback term 0.32 → 0.06. Pool is now a `--pool` flag recorded in
+`KEY.json`, chosen per run after checking durations with `--no-render`.
+
+Residual: B (semantic) at 450s is 11% longer than E at 406s. Semantic takes
+top-relevance clips until it passes the target, so it overshoots by
+construction. Recorded rather than trimmed — trimming would change what the
+baseline is.
+
+The first set at `study/localchat-2026-07-26` is superseded. Use this one.
 
 ## Operational notes
 
