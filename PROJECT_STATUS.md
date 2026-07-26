@@ -4,14 +4,23 @@ Last updated: 2026-07-26
 
 ## Why / What
 
-Turn a creator-owned video or podcast archive into coherent themed mashups
-using only clips that already exist. A comedian with fifteen recorded sets is
-sitting on a good themed set that is merely scattered; the alternatives today
-are days of manual editing or a semantic-search supercut with no shape.
+**The goal (restated 2026-07-26):** hand it a set of unrelated videos and get
+back one coherent video that is a delight to watch — extracting the good parts
+of each and joining them well. Not a supercut, not a search result.
 
-The bet is that **ordering is the hard part and the valuable part**. Because
-that bet is falsifiable, the repo builds the tool *and* the blind experiment
-that can kill it. It is a validation experiment before it is a product.
+The original framing was narrower — one creator's own archive, comedy — and
+most of the code still assumes it. The gap between the two is tracked in
+[`docs/retrospective-2026-07-26.md`](docs/retrospective-2026-07-26.md).
+
+The bet is that **ordering is the hard part and the valuable part**. That bet
+is falsifiable, so the repo builds the tool *and* the blind experiment that
+can kill it.
+
+⚠️ **"A validation experiment before it is a product" is currently a trap, not
+a principle.** A real-but-small ordering effect is perfectly good for a product
+and impossible to prove with the study as designed. Three sessions have gone
+into the apparatus and produced zero human judgments. The next action must
+produce a human judgment, not a better instrument.
 
 **Users:** solo creators with a single-owner archive — stand-ups, podcasters,
 long-running YouTubers — plus the owner running the validation study.
@@ -22,9 +31,15 @@ strategies plus two baselines; an EDL as the editable document; a transcript
 timeline editor; FFmpeg rendering; the five-condition blind experiment.
 
 **OUT of scope:** fine-tuning; generated dialogue, narration or footage;
-arbitrary YouTube downloading or third-party copyrighted archives; a
-general-purpose video editor; auth, billing, collaboration; more than one
-content domain at a time (comedy is the target).
+*fetching* video — the tool reads a directory of media files and never
+downloads anything, so which videos go in the folder, and the rights to use
+them, stay with the operator; a general-purpose video editor; auth, billing,
+collaboration.
+
+Note this is a scope boundary on the **fetcher**, not on the input. The
+pipeline itself is indifferent to where a file came from and already accepts
+unrelated sources; what it has never been *tested* on is genuinely
+heterogeneous material (see Planned #3).
 
 ## Dependencies
 
@@ -115,15 +130,34 @@ under 0.10 across all five conditions, supplying 45–67% of each AI score and
 100% of both baseline scores. The baselines' weight profile is 100%
 order-blind, so the 0.742-vs-0.535 headline was never evidence about ordering.
 
-**4. The ordering machinery itself works.** Against 1000 shuffles of its own
-clips, the planner's order sat at the 99.4th / 99.9th / 100th percentile for
-the three AI strategies. This is the one clearly positive result: the beam
-search is optimising order, not dressing up a retrieval result.
+**4. The search is not broken — but this is circular.** Against 1000 shuffles
+of its own clips the planner's order sat at the 99.4th / 99.9th / 100th
+percentile. It was first reported here as evidence for the thesis. It is not:
+beam search optimises that objective, so winning on it is expected. It says the
+optimiser works. It says nothing about whether the objective matches human
+taste.
+
+**5. The study cannot detect what it is looking for.** Six viewers, one pair,
+sign test — the rejection region is only 6–0 or 0–6, so power is `p⁶+(1−p)⁶`:
+**12%** against a planner truly preferred 70% of the time, 26% at 80%, 53% at
+90%. Roughly 40–50 judgments are needed. More pairs per person is the cheap
+route, not more people.
 
 Building the matched pair immediately exposed a latent bug — `plan` charged a
 6% unfinished-ending penalty and `rescore` did not, so any rescored timeline
 (including every human edit) was silently inflated. Now shared via
 `ending_penalty`.
+
+### Checked, not assumed
+
+Claims about the multi-source goal that turned out to be **already handled**:
+ingestion takes any directory of media files, so externally fetched videos work
+with no new code; rendering applies per-clip EBU R128 `loudnorm` and letterboxes
+every clip to a common size and fps; missing subtitles are transcribed locally.
+
+One real gap: `_target_format` takes resolution and fps from the **first video
+source**, so a low-resolution file early in a heterogeneous archive silently
+downscales the entire render.
 
 ## Products
 
@@ -199,27 +233,40 @@ Building the matched pair immediately exposed a latent bug — `plan` charged a
 
 ### In progress
 
-1. **Editor UI verification.** `web/` builds and `web/dist` exists, but the
-   editor has only ever been driven against synthetic fixtures. It has not been
-   exercised against a real EDL with real media.
+1. **Watch the output.** Nobody has watched a generated mashup and said whether
+   it is any good. `study/matched-couples/A.mp4` and `B.mp4` are 6:39 each,
+   identical clips in different orders. Two questions, in order of importance:
+   *is either one a delight?* and *can you tell them apart?* A "no" to the first
+   makes the sequencing question premature; a "no" to the second means ordering
+   effects on this material are below human resolution and the corpus, not the
+   planner, is the problem. Forty minutes, one person, and it outranks every
+   other item here.
 
 ### Planned
 
-2. **Rate the matched pair.** `study/matched-couples` — prompt "how couples met
-   and got married", escalation at the default pool 40, two arms of 399.002s
-   each. The planner's order beats 100% of 200 arbitrary orders of the same
-   clips, so the objective is confidently ahead going in. Six viewers, `KEY.json`
-   withheld, hand over the `.mp4` files only, then `mashup evaluate`. This is
-   the only step that can validate the sequencing claim; everything below is a
-   proxy for it.
-3. **Regenerate the five-condition set on a supported brief.** The existing one
+2. **Get 15–20 matched pairs judged, across several prompts.** The six-viewer
+   single-pair design has 12% power against a planner preferred 70% of the time
+   (see Feasibility audit). More pairs per rater is the cheap fix. Only worth
+   doing if item 1 says the pairs are distinguishable at all.
+3. **Test on genuinely heterogeneous sources.** Every run so far used one show:
+   one host, one format, one audio chain. The goal is unrelated videos. Nothing
+   in the pipeline has ever seen that, and `required_context`/`can_open` are
+   judged per clip with no notion of what a viewer arriving from a *different
+   video* knows. This is the largest untested risk for the actual goal.
+4. **Fix `_target_format`.** It takes resolution and fps from the first video
+   source, so one low-resolution file early in a heterogeneous archive
+   downscales the whole render. Should take the modal or maximal format.
+5. **Regenerate the five-condition set on a supported brief.** The existing one
    is void (see Feasibility audit). It measures the pipeline end to end rather
-   than sequencing, so it is worth having, but second in line.
-3. Cross-archive validation. The kill criterion is explicitly cross-archive; a
+   than sequencing — worth having, but not on the critical path.
+6. Cross-archive validation. The kill criterion is explicitly cross-archive; a
    good Groucho result proves considerably less than it appears to.
-4. **The callback strategy plans over a different pool than the other two.**
+7. **The callback strategy plans over a different pool than the other two.**
    Necessary — MMR removes the material callbacks need — but a confound that
    has to be reported alongside any blind-comparison result.
+8. **Editor UI verification.** `web/` builds and `web/dist` exists, but the
+   editor has only ever been driven against synthetic fixtures, never a real
+   EDL with real media.
 
 ### Deferred / open questions
 

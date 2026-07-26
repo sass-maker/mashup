@@ -31,6 +31,10 @@ sequencing actually beats retrieve-and-join.
   isolates sequencing by holding the clip set fixed, why its comparator is the
   median shuffle, why six viewers can only reach significance at unanimity,
   and `mashup order-test` — the mechanical proxy you run before recruiting.
+- [retrospective-2026-07-26.md](retrospective-2026-07-26.md) — three
+  sessions of apparatus-building and no human judgments: a claim walked
+  back, the study's 12% power, and where the restated goal diverges from
+  what the code assumes.
 
 ## Specification
 

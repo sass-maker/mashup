@@ -134,6 +134,21 @@ p = 0.219. The command reports the count and the exact p-value and calls only
 the former significant. A 5–1 split is worth acting on as evidence and is not a
 result, and the code will not round it up into one.
 
+**That makes one pair badly underpowered.** With a rejection region of only
+{6–0, 0–6}, power is `p⁶ + (1−p)⁶`:
+
+| if the planner's order is truly preferred… | chance of detecting it |
+|---|---|
+| 70% of the time | 12% |
+| 80% of the time | 26% |
+| 90% of the time | 53% |
+
+So the likely outcome of a single pair is an ambiguous null even when the
+planner is good. Reaching a usable answer needs roughly **40–50 judgments**,
+and the cheap route is more pairs per rater across several prompts rather than
+more raters. Judgments from one person are correlated, so read them per rater
+rather than pooling them into one sign test.
+
 The test is two-sided on purpose: the shuffled arm winning 6–0 is a real
 finding about the planner, not a null one.
 
