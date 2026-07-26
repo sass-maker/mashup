@@ -77,6 +77,7 @@ columns:
 | Column | Meaning |
 |---|---|
 | `viewer` | Viewer number, 1–5. Pre-filled. |
+| `position` | Watch order for that viewer, 1 first. Pre-filled — see below. |
 | `variant` | Blind label A–E. Pre-filled. |
 | `overall_rank` | 1 = best of the five, for this viewer. This is the preference signal. |
 | `clips_total` | How many clips the viewer counted in this variant. Denominator for the next column. |
@@ -87,6 +88,34 @@ columns:
 
 Analysis ignores any row with a blank `overall_rank`, so a partially completed
 sheet still yields a result; a sheet with no completed rows raises.
+
+## Viewing order
+
+Rows are written in the order each viewer should watch, rotated one step per
+viewer, so every variant is seen first by exactly one viewer and last by
+exactly one:
+
+```
+viewer 1   A B C D E
+viewer 2   B C D E A
+viewer 3   C D E A B
+viewer 4   D E A B C
+viewer 5   E A B C D
+```
+
+Handing all five viewers the same A–E order would confound the variant with
+when it was watched. The first is judged on fresh attention and anchors the
+scale for everything after it; the last is judged after half an hour of
+similar footage. Fixed order pushes both effects onto one condition, and the
+ranking could not distinguish that from a real preference.
+
+This balances *position*. It does not balance carryover — which variant
+preceded which — because five variants need ten viewers for that. With five
+viewers, position is as much as can be balanced, and the residual is worth
+recording when the result is read.
+
+**The rater works down the sheet.** Row order is the instruction; do not
+sort it.
 
 ## Success criteria
 

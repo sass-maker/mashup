@@ -96,13 +96,35 @@ def run_experiment(
     return blinds
 
 
+VIEWERS = 5
+
+
+def viewing_orders(labels: list[str], viewers: int = VIEWERS) -> list[list[str]]:
+    """One viewing order per viewer, rotated so no variant keeps a position.
+
+    Showing every viewer A..E in label order confounds the variant with when it
+    was watched: whatever plays first is judged fresh and sets the anchor for
+    the rest, and whatever plays last is judged tired. Those effects would land
+    entirely on one condition. A cyclic square gives each variant each position
+    exactly once across five viewers, so position averages out of the ranking.
+
+    It balances position, not carryover — variant order pairs are not balanced,
+    which would need ten viewers for five variants. With five viewers this is
+    the most that can be balanced.
+    """
+    ordered = sorted(labels)
+    return [[ordered[(i + v) % len(ordered)] for i in range(len(ordered))] for v in range(viewers)]
+
+
 def write_rating_sheet(blinds: list[Blind], path: Path) -> None:
-    """One row per viewer per variant, for the rater to fill in."""
+    """One row per viewer per variant, in the order that viewer watches them."""
+    orders = viewing_orders([b.label for b in blinds])
     with path.open("w", newline="") as fh:
         writer = csv.writer(fh)
         writer.writerow(
             [
                 "viewer",
+                "position",  # watch in this order; 1 is first
                 "variant",
                 "overall_rank",  # 1 = best of the five
                 "clips_total",
@@ -112,9 +134,9 @@ def write_rating_sheet(blinds: list[Blind], path: Path) -> None:
                 "notes",
             ]
         )
-        for viewer in range(1, 6):
-            for blind in sorted(blinds, key=lambda b: b.label):
-                writer.writerow([viewer, blind.label, "", "", "", "", "", ""])
+        for viewer, order in enumerate(orders, start=1):
+            for position, label in enumerate(order, start=1):
+                writer.writerow([viewer, position, label, "", "", "", "", "", ""])
 
 
 # ---- analysis -----------------------------------------------------------

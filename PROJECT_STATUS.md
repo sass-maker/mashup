@@ -350,6 +350,38 @@ sidecars and EDLs to `study/localchat-2026-07-26`. Durations span 326–450
 seconds and every file is non-empty. `KEY.json` remains withheld; this proves
 the real-archive machinery, not viewer preference.
 
+## Blind set readiness (`study/localchat-2026-07-26`)
+
+Prompt "seven minutes on airline travel", seed 0. All five render correctly —
+h264 + aac, 472×360, sidecar SRTs, MP4 durations matching their EDLs.
+
+Two design faults found before any viewer was recruited. One is fixed:
+
+- **Every viewer was to watch A–E in the same order.** Position effects — the
+  first judged fresh and anchoring the scale, the last judged after half an
+  hour — would have landed entirely on one condition. `write_rating_sheet` now
+  rotates the order per viewer so each variant takes each position once.
+  Carryover is still unbalanced; that needs ten viewers for five variants.
+
+One is not, and needs a decision:
+
+| | A chrono | B semantic | C random | D callback | E escalation |
+|---|---|---|---|---|---|
+| duration | **322.7s** | 445.2s | 396.3s | 418.6s | 424.3s |
+| clips | 8 | 11 | 10 | 11 | 11 |
+
+**A is 5:23 against a 7:25 for B — 23% under target, a 122s spread.** Viewers
+ranking "overall" would be comparing unequal lengths, and the shortest variant
+is identifiable before playback, so the blinding leaks. If chronological
+loses, length and ordering cannot be told apart.
+
+The cause is structural, not a regression: chronological is constrained to
+archive order from a `can_open` seed, and this pool offers too few, so the
+beam exhausts valid continuations and the duration-band fallback returns the
+best short sequence. Options are to re-plan A with a larger pool, re-run the
+set on a prompt where all five reach the band, or run as-is and treat A's
+rank as uninterpretable.
+
 ## Operational notes
 
 - The whole pipeline runs offline on Apple silicon; no subcommand needs a
