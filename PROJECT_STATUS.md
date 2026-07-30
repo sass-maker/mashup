@@ -22,8 +22,8 @@ into the apparatus and produced zero human judgments. The next action must
 produce a human judgment, not a better instrument.
 
 **Users:** one operator — the author — publishing finished cuts to their own
-YouTube channel. Decided 2026-07-26: the software is not released to anyone
-else, so there is no second operator to design for.
+YouTube channel. The source is publicly readable, but there is no packaged
+release, hosted service, or second operator to design for.
 
 Three consequences, recorded because they were conflated once already:
 
@@ -89,6 +89,8 @@ heterogeneous material (see Planned #3).
 
 ## Timeline
 
+- 2026-07-30 — made the canonical GitHub repository publicly readable. This is
+  source visibility, not a packaged release or project-wide software license.
 - 2026-07-25 — repo scaffolded; OpenSpec change `build-mashup-mvp` written.
 - 2026-07-25 — Python pipeline built end to end in-repo: ingest, segment,
   enrich, embed, retrieve, plan, EDL, render, editor server, experiment
@@ -256,6 +258,9 @@ downscales the entire render.
 
 ## Products
 
+- Public source and roadmap —
+  [`sarthakagrawal927/mashup`](https://github.com/sarthakagrawal927/mashup)
+  and [GitHub Issues](https://github.com/sarthakagrawal927/mashup/issues).
 - `mashup` CLI (`uv run mashup`) — the whole pipeline. Subcommands: `ingest`,
   `enrich`, `embed`, `models`, `status`, `coverage`, `build`, `preview`,
   `render`, `serve`, `order-test`, `experiment`, `evaluate`, `churn`;
@@ -329,162 +334,6 @@ downscales the entire render.
 - **Verification** — 178 unit tests across subtitles, transcription, gateway, enrichment,
   splitter, scoring, planning, boundaries, EDL I/O, editor server and the
   fetcher, plus an ffmpeg-gated render smoke test.
-
-## Todo / Planned / Deferred / Blocked
-
-### In progress
-
-0. **Build a proper corpus.** Current focus. Twenty episodes of one quiz show
-   is the easy case and not the goal: one host, one format, one audio chain,
-   and ~40-second interchangeable vignettes with no through-line for a planner
-   to build on. If ordering effects are imperceptible on this material, every
-   experiment returns null for reasons that have nothing to do with the
-   software. A corpus is fit for purpose here when ordering *can* matter
-   (setup/payoff, energy range, thematic build), sources are genuinely
-   heterogeneous, and several briefs clear the noise floor — which
-   `mashup coverage` now measures directly. Provenance is no longer a corpus
-   constraint (see Why/What); it is an upload decision.
-
-   **Direction wanted: comedy shows.** Consistent with the original target
-   domain rather than a change of course. Notes for whoever picks this up:
-
-   - **Comedy podcasts fit the pipeline best.** Two to three hours per episode,
-     so ten episodes out-yield thirty Prelinger films; real bits with setup and
-     payoff, which is the structure the planner is meant to find; different
-     hosts and guests across shows, so genuinely heterogeneous; auto-captions
-     available, so the transcription stage stays skipped.
-   - **Comedy is also the hardest case for this objective, and that is worth
-     knowing before blaming the planner.** Every signal the pipeline has is
-     derived from text — summary, topics, role, energy, entities, embeddings.
-     Timing, delivery, silence and the performance carry most of a laugh and
-     none of them survive into the transcript. A flat result on comedy may mean
-     the objective cannot see the thing that makes it funny, rather than that
-     ordering does not matter.
-   - **Broadcast comedy is among the most aggressively Content ID'd material**
-     on YouTube. Fine for developing locally; a per-upload decision for the
-     channel, and more likely than average to draw a block rather than a
-     monetize claim.
-   - Prelinger was investigated and set aside: 1,871 of its 10,369 items carry
-     an affixed CC Public Domain Dedication and ship with captions, but the
-     films are short with flat narration, and its one real advantage — clean
-     provenance — stopped being the binding constraint.
-
-1. **Watch the output.** Nobody has watched a generated mashup and said whether
-   it is any good. `study/matched-couples/A.mp4` and `B.mp4` are 6:39 each,
-   identical clips in different orders. Two questions, in order of importance:
-   *is either one a delight?* and *can you tell them apart?* A "no" to the first
-   makes the sequencing question premature; a "no" to the second means ordering
-   effects on this material are below human resolution and the corpus, not the
-   planner, is the problem. Forty minutes, one person, and it outranks every
-   other item here.
-
-### Planned
-
-2. **Get 15–20 matched pairs judged, across several prompts.** The six-viewer
-   single-pair design has 12% power against a planner preferred 70% of the time
-   (see Feasibility audit). More pairs per rater is the cheap fix. Only worth
-   doing if item 1 says the pairs are distinguishable at all.
-3. **Test on genuinely heterogeneous sources.** Every run so far used one show:
-   one host, one format, one audio chain. The goal is unrelated videos. Nothing
-   in the pipeline has ever seen that, and `required_context`/`can_open` are
-   judged per clip with no notion of what a viewer arriving from a *different
-   video* knows. This is the largest untested risk for the actual goal.
-4. **Fix `_target_format`.** It takes resolution and fps from the first video
-   source, so one low-resolution file early in a heterogeneous archive
-   downscales the whole render. Should take the modal or maximal format.
-5. **Regenerate the five-condition set on a supported brief.** The existing one
-   is void (see Feasibility audit). It measures the pipeline end to end rather
-   than sequencing — worth having, but not on the critical path.
-6. Cross-archive validation. The kill criterion is explicitly cross-archive; a
-   good Groucho result proves considerably less than it appears to.
-7. **The callback strategy plans over a different pool than the other two.**
-   Necessary — MMR removes the material callbacks need — but a confound that
-   has to be reported alongside any blind-comparison result.
-8. **Editor UI verification.** `web/` builds and `web/dist` exists, but the
-   editor has only ever been driven against synthetic fixtures, never a real
-   EDL with real media.
-
-### Deferred / open questions
-
-**A. Per-clip source labels (wanted, blocked on a build).** Mashing unrelated
-videos together should mark each clip with where it came from — a white
-lower-third for the first few seconds of each cut. It is also the mechanism
-that would discharge CC-BY attribution on-screen rather than in a description.
-Blocked: the installed ffmpeg (Homebrew 8.1.2) is built without
-`libfreetype`/`libass`/`fontconfig`, so `drawtext` does not exist. `overlay`
-does, so the alternatives are a fuller ffmpeg or rendering label images in
-Python. Both need a decision; neither is started.
-
-**B. The same missing build options break `--subtitles burn`.** Burn-in needs
-the `subtitles` filter, which needs libass. The dependency is already noted
-under External, but nothing checks for it at runtime — the option is accepted
-and fails inside ffmpeg. Should be detected up front with a clear message.
-
-**C. Retention-driven iteration (later, once output is worth publishing).**
-Rather than asking viewers where a cut sags, instrument playback: a retention
-curve gives a reading every few seconds, and each drop-off maps to a timestamp
-→ clip → segment id → its eight scores. That is the labelled data the objective
-has never had. YouTube is the eventual home for this once there is an audience,
-but it is the wrong *development* loop — retention is dominated by thumbnail,
-title, first fifteen seconds and traffic source, it needs views to be
-non-noisy, and YouTube will not randomise viewers across two different videos.
-The cheap first version is position logging in `mashup serve`, which already
-range-serves the media. Matched pairs supply the baseline a retention curve
-otherwise lacks: same clips, different order, compare the two curves at clip
-boundaries.
-
-**D. Licence binds at publication, not during development.** Given the scope
-above, only the middle row is live — and it is live for every upload:
-
-| situation | what actually applies |
-|---|---|
-| building a corpus locally | nothing leaves the machine. Downloading from YouTube breaks their *terms of service* — a contract matter, not copyright — and that is the only live issue. |
-| publishing a cut | Content ID matches. Rightsholders choose block, **monetize** or track; monetize is common, meaning revenue redirects and the video stays up. |
-| shipping to other people | not happening — the software is not released. This is the exposure the clipping tools (Opus Clip, Descript, Vizard) handle by operating only on content **the user already owns**, with the rights burden in their terms. |
-
-So: develop against whatever material is best, and decide per upload what the
-channel can carry. A claim is usually a revenue redirect rather than a
-takedown, but repeat blocks and strikes accumulate against a channel, so the
-per-video call is worth making deliberately rather than by default.
-
-Attribution is not a substitute for any of this: crediting a source discharges
-a CC-BY condition, it does not create a licence, and it is not a fair-use
-factor. See [`scripts/README.md`](scripts/README.md#licence-position).
-
-5. `Source.recorded_at` is never populated; ordinals proxy chronology. Real
-   creator archives may need a filename date convention parsed.
-6. `ingest_archive` raises on the first unreadable file. A real archive
-   probably wants to tolerate one bad file and report it.
-7. `Config.media_dir` (`.mashup/media`) is created by `ensure_dirs` but nothing
-   writes to it. Either give it a job or delete it.
-8. Scoring weights are hand-set priors, not learned. The calibration
-    percentiles (p99, p25–p90, p25) are priors too. The experiment tests them;
-    the EDL term breakdown is what makes retuning tractable.
-9. **`relevance` is uncalibrated, and now diagnosed.** It sat at 0.41–0.46 for
-    every condition including random across three runs. The cause was not the
-    pool being uniformly on-topic: nonsense text scores 0.434 on this corpus,
-    so the term reports raw cosine in a band whose floor is 0.43 and whose
-    realistic ceiling is ~0.70. It should be rescaled against the measured
-    floor the way `redundancy` and `flow` already are against corpus
-    percentiles. **Not done** — unlike the coverage gate, this changes what the
-    planner optimises and would move selections, so it wants a deliberate
-    decision rather than a third unannounced scoring change.
-10. **`non_repetition` reads ~1.00 for all five conditions** including random,
-    because p99 calibration puts the cut at 0.843 and almost no pair reaches
-    it. Same class of defect as above, same reason it is still open.
-11. **`term_callback` is 25% a constant role check** (`lands`), so a strategy
-    that ignores callbacks can score 0.25 on the term. On one prompt at pool
-    160 the chronological cut scored 0.25 against the callback strategy's 0.06.
-    The term needs rebalancing; deferred with the other two so all three
-    scoring changes can be made and re-measured together.
-12. **`can_end` is true for only 18.6% of segments** (`can_open`, 14.0%). The
-    6% unfinished-ending penalty therefore applies to roughly four sequences in
-    five and behaves more like a lottery on which clip lands last than like a
-    judgement. Worth checking against a human before it is trusted.
-
-### Blocked
-
-Nothing. The full pipeline has run end to end against the live gateway.
 
 ## First run (2026-07-25)
 
@@ -727,3 +576,9 @@ WhisperKit's VAD chunking re-emitted whole decoded windows (49% duplicate
 cues), and Whisper hallucinated a stock "Thank you." over non-speech audio
 (14% of segments). Both would have fed noise directly into the
 `non_repetition` scoring term.
+
+## Work queue
+
+Open work is tracked only in [GitHub Issues](https://github.com/sarthakagrawal927/mashup/issues).
+An open issue is a to-do, a linked pull request is in progress, and merge plus
+issue closure makes the work done.
