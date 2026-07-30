@@ -24,6 +24,11 @@ from typing import Literal
 
 from mashup.models import EDL, Clip
 from mashup.render.boundaries import ToolError, ffmpeg_bin, ffprobe_bin, run_tool
+from mashup.render.provenance import (
+    write_label_card,
+    write_visual_credit_card,
+    write_watermark_card,
+)
 
 Progress = Callable[[str], None]
 
@@ -35,7 +40,7 @@ CARD_COLOUR = "0x101014"
 LOUDNORM = "loudnorm=I=-16:TP=-1.5:LRA=11"
 _AFORMAT = "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo"
 # Bump to invalidate every cached intermediate after a recipe change.
-_RECIPE = "v1"
+_RECIPE = "v6"
 _SRT_LINE = 84
 
 _BASE = ("-y", "-nostdin", "-hide_banner", "-loglevel", "error")
@@ -127,7 +132,15 @@ def _target_format(edl: EDL, infos: dict[str, MediaInfo]) -> tuple[tuple[int, in
     return DEFAULT_SIZE, DEFAULT_FPS
 
 
-def _clip_key(clip: Clip, size: tuple[int, int], fps: float, normalise: bool) -> str:
+def _clip_key(
+    clip: Clip,
+    size: tuple[int, int],
+    fps: float,
+    normalise: bool,
+    source_label: bool,
+    watermark: bool,
+    watermark_text: str,
+) -> str:
     """Identity of a rendered intermediate: the clip fields that affect pixels.
 
     `transition` and crossfade length are excluded — they are applied at concat
@@ -135,6 +148,23 @@ def _clip_key(clip: Clip, size: tuple[int, int], fps: float, normalise: bool) ->
     """
     src = Path(clip.source_path)
     stat = src.stat()
+    visual_identity: list[object] = []
+    for visual in clip.visuals:
+        visual_source = Path(visual.source_path)
+        visual_stat = visual_source.stat()
+        visual_identity.extend(
+            (
+                visual.source_path,
+                visual_stat.st_size,
+                visual_stat.st_mtime_ns,
+                visual.mode,
+                round(visual.source_time, 4),
+                round(visual.start, 4),
+                round(visual.end, 4),
+                visual.source_title,
+                visual.source_url,
+            )
+        )
     raw = "|".join(
         str(x)
         for x in (
@@ -148,6 +178,14 @@ def _clip_key(clip: Clip, size: tuple[int, int], fps: float, normalise: bool) ->
             size[1],
             round(fps, 4),
             normalise,
+            source_label,
+            clip.source_title if source_label else "",
+            clip.source_id if source_label else "",
+            round(clip.start, 4) if source_label else "",
+            round(clip.end, 4) if source_label else "",
+            watermark,
+            watermark_text if watermark else "",
+            *visual_identity,
         )
     )
     return hashlib.sha256(raw.encode()).hexdigest()[:20]
@@ -161,6 +199,9 @@ def _extract_cmd(
     size: tuple[int, int],
     fps: float,
     normalise: bool,
+    label: Path | None,
+    watermark: Path | None,
+    visual_credits: Sequence[Path],
 ) -> list[str]:
     width, height = size
     duration = clip.render_duration
@@ -181,6 +222,7 @@ def _extract_cmd(
     else:
         cmd += ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"]
         audio_map = f"{next_input}:a:0"
+        next_input += 1
 
     vfilter = (
         f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
@@ -189,8 +231,80 @@ def _extract_cmd(
     )
     achain = ([LOUDNORM] if normalise else []) + [_AFORMAT]
 
-    cmd += ["-map", video_map, "-map", audio_map]
-    cmd += ["-filter:v", vfilter, "-filter:a", ",".join(achain)]
+    if clip.visuals or label is not None or watermark is not None:
+        graph = [f"[{video_map}]{vfilter}[base]"]
+        current = "base"
+        margin = max(12, width // 40)
+        frame_duration = max(1 / fps, 0.04)
+        image_suffixes = {".avif", ".bmp", ".gif", ".jpeg", ".jpg", ".png", ".webp"}
+        for visual_index, (visual, credit) in enumerate(
+            zip(clip.visuals, visual_credits, strict=True)
+        ):
+            visual_path = Path(visual.source_path)
+            if visual_path.suffix.lower() in image_suffixes:
+                cmd += ["-loop", "1", "-framerate", f"{fps:g}", "-i", str(visual_path)]
+                still_filter = f"trim=duration={duration:.4f},setpts=PTS-STARTPTS"
+            else:
+                cmd += ["-ss", f"{visual.source_time:.4f}", "-i", str(visual_path)]
+                if visual.mode == "motion":
+                    visual_duration = visual.end - visual.start
+                    still_filter = (
+                        f"trim=duration={visual_duration:.4f},"
+                        f"setpts=PTS-STARTPTS+{visual.start:.4f}/TB"
+                    )
+                else:
+                    still_filter = (
+                        f"trim=duration={frame_duration:.4f},setpts=PTS-STARTPTS,"
+                        f"tpad=stop_mode=clone:stop_duration={duration:.4f}"
+                    )
+            visual_map = f"{next_input}:v:0"
+            next_input += 1
+            still_name = f"still{visual_index}"
+            graph.append(
+                f"[{visual_map}]{still_filter},"
+                f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color={CARD_COLOUR},"
+                f"setsar=1,fps={fps},format=yuv420p[{still_name}]"
+            )
+            visual_name = f"visual{visual_index}"
+            enable = f"between(t\\,{visual.start:.4f}\\,{visual.end:.4f})"
+            graph.append(
+                f"[{current}][{still_name}]overlay=0:0:eof_action=pass:"
+                f"enable='{enable}'[{visual_name}]"
+            )
+            current = visual_name
+
+            cmd += ["-loop", "1", "-framerate", f"{fps:g}", "-i", str(credit)]
+            credit_map = f"{next_input}:v:0"
+            next_input += 1
+            credited_name = f"credited{visual_index}"
+            graph.append(
+                f"[{current}][{credit_map}]overlay=x=W-w-{margin}:y=H-h-{margin}:"
+                f"enable='{enable}'[{credited_name}]"
+            )
+            current = credited_name
+        if label is not None:
+            cmd += ["-loop", "1", "-framerate", f"{fps:g}", "-i", str(label)]
+            label_map = f"{next_input}:v:0"
+            next_input += 1
+            graph.append(f"[{current}][{label_map}]overlay=x={margin}:y=H-h-{margin}[labeled]")
+            current = "labeled"
+        if watermark is not None:
+            cmd += ["-loop", "1", "-framerate", f"{fps:g}", "-i", str(watermark)]
+            watermark_map = f"{next_input}:v:0"
+            graph.append(f"[{current}][{watermark_map}]overlay=x=W-w-{margin}:y={margin}[branded]")
+            current = "branded"
+        cmd += [
+            "-filter_complex",
+            ";".join(graph),
+            "-map",
+            f"[{current}]",
+            "-map",
+            audio_map,
+        ]
+    else:
+        cmd += ["-map", video_map, "-map", audio_map, "-filter:v", vfilter]
+    cmd += ["-filter:a", ",".join(achain)]
     cmd += _flags(_VIDEO_ENC, _AUDIO_ENC)
     return cmd + ["-t", f"{duration:.4f}", "-movflags", "+faststart", str(dst)]
 
@@ -312,6 +426,9 @@ def render(
     crossfade: float = 0.0,
     normalise: bool = True,
     subtitles: Literal["none", "sidecar", "burn"] = "sidecar",
+    source_label: bool = True,
+    watermark: bool = True,
+    watermark_text: str = "MASHUP",
     workdir: Path,
     progress: Progress | None = None,
 ) -> Path:
@@ -335,7 +452,12 @@ def render(
             "libass-enabled ffmpeg (brew install ffmpeg --with-libass / a full build)."
         )
 
-    missing = sorted({c.source_path for c in edl.clips if not Path(c.source_path).exists()})
+    source_paths = {
+        path
+        for clip in edl.clips
+        for path in (clip.source_path, *(visual.source_path for visual in clip.visuals))
+    }
+    missing = sorted(path for path in source_paths if not Path(path).exists())
     if missing:
         raise MissingSourceError("missing source media:\n  " + "\n  ".join(missing))
 
@@ -344,6 +466,7 @@ def render(
     workdir = Path(workdir)
     parts_dir = workdir / "parts"
     parts_dir.mkdir(parents=True, exist_ok=True)
+    labels_dir = workdir / "source-labels"
 
     infos = {p: probe(Path(p)) for p in sorted({c.source_path for c in edl.clips})}
     size, fps = _target_format(edl, infos)
@@ -351,14 +474,35 @@ def render(
 
     parts: list[Path] = []
     for n, clip in enumerate(edl.clips, start=1):
-        dst = parts_dir / f"{_clip_key(clip, size, fps, normalise)}.mp4"
+        dst = parts_dir / (
+            f"{_clip_key(clip, size, fps, normalise, source_label, watermark, watermark_text)}.mp4"
+        )
         tag = f"[{n}/{len(edl.clips)}] {clip.source_id} {clip.render_start:.2f}s"
         if dst.exists() and dst.stat().st_size > 0:
             say(f"{tag} cached")
         else:
             say(f"{tag} extracting")
             info = infos[clip.source_path]
-            run_tool(_extract_cmd(clip, info, dst, size=size, fps=fps, normalise=normalise))
+            label = write_label_card(clip, size[0], labels_dir) if source_label else None
+            watermark_card = (
+                write_watermark_card(watermark_text, size[0], labels_dir) if watermark else None
+            )
+            visual_credits = [
+                write_visual_credit_card(visual, size[0], labels_dir) for visual in clip.visuals
+            ]
+            run_tool(
+                _extract_cmd(
+                    clip,
+                    info,
+                    dst,
+                    size=size,
+                    fps=fps,
+                    normalise=normalise,
+                    label=label,
+                    watermark=watermark_card,
+                    visual_credits=visual_credits,
+                )
+            )
         parts.append(dst)
 
     # Probe the real intermediates: encoders round to frame boundaries, and the

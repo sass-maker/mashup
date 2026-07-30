@@ -177,6 +177,9 @@ mashup build --prompt "..." --baselines --no-render      # add semantic + random
 mashup build --prompt "..." --crossfade 0.4 --subtitles burn
 mashup build --prompt "..." --no-snap                    # cut exactly on segment bounds
 
+mashup short --prompt "..." --duration 45 --output output/short.mp4
+mashup short --prompt "..." --visuals visuals.json --watermark-text MY_SHOW
+
 mashup preview output/escalation.json      # transcript with source timecodes
 mashup render output/escalation.json --output final.mp4 --subtitles sidecar
 mashup serve output/escalation.json --port 8765          # loopback-only editor
@@ -186,6 +189,32 @@ mashup serve output/escalation.json --port 8765          # loopback-only editor
 ffmpeg. `--variants` selects the first N of `chronological, escalation,
 callback` (max 3). With both backends local no command needs a gateway key;
 `build` falls back to regex brief parsing without one.
+
+`mashup short` is a separate 30–60 second lane. It selects one contiguous
+window of existing transcript cues, records the normal independent score terms,
+and never rewrites or generates speech. `--visuals` accepts a JSON array of
+clip-relative archival stills:
+
+```json
+[
+  {
+    "clip_index": 0,
+    "mode": "motion",
+    "start": 8,
+    "end": 14,
+    "source_path": "archive/public-domain-film.mp4",
+    "source_time": 125.5,
+    "source_title": "Public Domain Film Collection",
+    "source_url": "https://archive.org/details/example"
+  }
+]
+```
+
+`mode` may be `still` (the backward-compatible default) or `motion`. Motion
+plays existing source-video frames from `source_time`; image files remain held.
+The renderer keeps the spoken-source heading and watermark visible and adds a
+separate on-screen archival visual credit. Visual source paths resolve from the
+current working directory and are persisted as absolute paths in the EDL.
 
 ### The transcript editor
 

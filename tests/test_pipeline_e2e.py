@@ -38,6 +38,7 @@ from mashup.models import EDL, Segment, Source
 from mashup.plan.planner import DURATION_CEILING
 from mashup.render import render
 from mashup.render.cut import probe
+from mashup.segment.editorial import merge_editorial_bit
 from mashup.store import Store
 
 pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
@@ -329,6 +330,10 @@ class StubGateway:
     def __init__(self, config: Config, **_kwargs: Any) -> None:
         self.config = config
 
+    @property
+    def name(self) -> str:
+        return "stub:gateway"
+
     @classmethod
     def counters(cls) -> dict[str, int]:
         return {
@@ -349,6 +354,18 @@ class StubGateway:
         type(self).chat_json_calls += 1
         # The enrichment schema is an array; the brief parser's is an object.
         if schema_hint.lstrip().startswith("["):
+            if '"reason"' in schema_hint:
+                ids = _ID_RE.findall(messages[-1]["content"])
+                return [
+                    {
+                        "id": segment_id,
+                        "can_open": segment_id.endswith(":0001"),
+                        "can_end": segment_id.endswith(":0002"),
+                        "required_context": [],
+                        "reason": "synthetic clean boundary",
+                    }
+                    for segment_id in ids
+                ]
             return enrichment_reply(messages[-1]["content"])
         return dict(BRIEF_REPLY)
 
@@ -573,17 +590,23 @@ def test_every_edl_respects_the_duration_ceiling(run: PipelineRun) -> None:
 
 
 def test_clips_carry_the_stored_segment(run: PipelineRun) -> None:
-    """The EDL is the store's view of a segment, projected onto a timeline."""
+    """The EDL is the repaired store span projected onto a timeline."""
     by_id = {s.id: s for s in run.segments}
     for edl in run.edls:
         for clip in edl.clips:
-            seg = by_id[clip.segment_id]
-            assert (clip.source_id, clip.start, clip.end) == (seg.source_id, seg.start, seg.end)
-            assert clip.text == seg.text
-            assert clip.summary == seg.meta.summary
-            assert clip.role == seg.meta.role
-            assert clip.energy == seg.meta.energy
-            assert clip.topics == list(seg.meta.topic)
+            members = [by_id[segment_id] for segment_id in clip.segment_ids]
+            expected = merge_editorial_bit(members, by_id[clip.segment_id])
+            assert (clip.source_id, clip.start, clip.end) == (
+                expected.source_id,
+                expected.start,
+                expected.end,
+            )
+            assert clip.text == expected.text
+            assert clip.source_title
+            assert clip.summary == expected.meta.summary
+            assert clip.role == expected.meta.role
+            assert clip.energy == expected.meta.energy
+            assert clip.topics == list(expected.meta.topic)
 
 
 def test_chronological_clips_run_forward_through_the_archive(run: PipelineRun) -> None:

@@ -14,13 +14,15 @@
     "@astrojs/react": "^4.4.0",
     "astro": "^5.16.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "three": "0.185.1"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.4",
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "@types/three": "^0.185.1",
     "typescript": "^5.9.0"
   }
 }

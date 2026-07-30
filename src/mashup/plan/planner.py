@@ -71,7 +71,7 @@ class _Beam:
 
     @property
     def ids(self) -> frozenset[str]:
-        return frozenset(s.id for s in self.seq)
+        return frozenset(member for segment in self.seq for member in segment.material_ids)
 
 
 def _search_weights(strategy: str) -> dict[str, float]:
@@ -147,7 +147,7 @@ def plan(
                 continue
 
             used = beam.ids
-            options = [s for s in pool if s.id not in used]
+            options = [s for s in pool if not (s.material_ids & used)]
             if chronological:
                 last = beam.seq[-1]
                 last_key = _chronological_key(last, ctx.source_ordinals)
@@ -252,10 +252,14 @@ def plan_semantic(candidates: list[Candidate], ctx: PlanContext, sim: SimFn) -> 
     bar the AI cuts have to clear."""
     seq: list[Segment] = []
     total = 0.0
+    used: set[str] = set()
     for cand in sorted(candidates, key=lambda c: c.relevance, reverse=True):
+        if cand.segment.material_ids & used:
+            continue
         if total + cand.segment.duration > ctx.target_duration * DURATION_CEILING:
             continue
         seq.append(cand.segment)
+        used.update(cand.segment.material_ids)
         total += cand.segment.duration
         if total >= ctx.target_duration * (1 - DURATION_TOLERANCE):
             break
@@ -283,10 +287,14 @@ def plan_random(
     rng.shuffle(pool)
     seq: list[Segment] = []
     total = 0.0
+    used: set[str] = set()
     for cand in pool:
+        if cand.segment.material_ids & used:
+            continue
         if total + cand.segment.duration > ctx.target_duration * DURATION_CEILING:
             continue
         seq.append(cand.segment)
+        used.update(cand.segment.material_ids)
         total += cand.segment.duration
         if total >= ctx.target_duration * (1 - DURATION_TOLERANCE):
             break

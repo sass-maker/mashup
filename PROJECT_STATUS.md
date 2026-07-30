@@ -1,6 +1,6 @@
 # mashup — PROJECT STATUS
 
-Last updated: 2026-07-26
+Last updated: 2026-07-29
 
 ## Why / What
 
@@ -124,7 +124,83 @@ heterogeneous material (see Planned #3).
   share 0–5% of their clips, so the design could not attribute a preference to
   sequencing at all; added a matched-pair design that can. See "Feasibility
   audit" below.
-- Next — rate the matched pair at `study/matched-couples` with six viewers.
+- 2026-07-29 — ran a CC0 modern-podcast pilot on four ZEROPOD episodes. The
+  pipeline completed, but the first 13-clip escalation cut exposed
+  mid-thought starts, context orphans, and a weak landing. Added cached
+  candidate-only boundary review, bounded adjacent-segment editorial bits,
+  hard integrity gates, overlap-aware planning, and EDL member provenance.
+  See "Podcast editorial pilot" below.
+- 2026-07-29 — made source provenance visible in exported video. Each clip now
+  opens with a six-second, EDL-driven lower-third containing its episode title
+  and original source time range. The dependency-free bitmap card works with
+  the supported FFmpeg even though it has no `drawtext` or libass filter; use
+  `--no-source-label` for a clean master.
+- 2026-07-29 — upgraded provenance into persistent premium branding: a
+  translucent `FROM THE ARCHIVE` source heading remains visible for the full
+  clip and changes at each edit boundary, while a configurable low-opacity
+  watermark stays top-right. Transparent graphics are generated as PNGs with
+  the Python standard library; the ZEROPOD pilot uses `ZEROPOD`.
+- 2026-07-29 — added a true short-form lane after a 45-second control returned
+  107 seconds. `mashup short` now selects one complete 30–60 second window at
+  stored transcript-cue boundaries, retains the eight surfaced score terms,
+  and can place credited provenance-backed archival stills under the persistent
+  source heading and watermark. The first ZEROPOD proof is 46.29 seconds with
+  three Public Domain Mark 1.0 stills.
+- 2026-07-29 — replaced the short proof's sparse held stills with continuous
+  moving archival B-roll. Visual manifests now choose backward-compatible
+  `still` or `motion` playback; the ZEROPOD motion proof covers all 46.29
+  seconds with existing public-domain car, presenter, and road footage while
+  keeping spoken-source branding and interval-bound visual credits above it.
+- Next — add global beat assignment and seam selection, then compare the
+  repaired cut with the original before any matched-pair viewer study.
+
+## Podcast editorial pilot (2026-07-29)
+
+Four ZEROPOD episodes were ingested from the show's official CC0 RSS feed into
+the ignored `archive/zeropod-pilot` and `.mashup/zeropod-pilot` state. The
+frozen brief was:
+
+> A seven-minute story about how founders turn conviction into products. Start
+> with the problem they noticed, move through early failures and difficult
+> tradeoffs, and finish with advice about building for real people.
+
+Coverage passed with 108 supporting segments and +0.140 lift over nonsense.
+The original escalation output used 13 isolated segments over 7:07. Listening
+and transcript inspection found mid-sentence starts, missing premises,
+mechanical transitions, and a final clip that did not function as the requested
+advice landing.
+
+The editorial-integrity pass now:
+
+- re-reviews only candidate-adjacent boundaries with the configured chat model;
+- content-caches 260 reviewed boundaries under the ignored workdir (about four
+  minutes cold, under four seconds on an unchanged repeat);
+- assembles the smallest clean-opening-to-clean-ending span around each
+  retrieved anchor, capped at five stored segments / 300 seconds;
+- prevents different overlapping bits from reusing the same stored dialogue;
+- applies the same repair to all AI strategies and both baselines; and
+- writes every member segment ID into the EDL while retaining the anchor ID for
+  editor compatibility. Timeline cards now show the human-readable episode
+  title plus original source timecode; replacing a clip updates both.
+
+The viable repaired escalation cut is
+`output/zeropod-editorial-final/escalation-premium.mp4`: four bits, 7:18, three sources,
+with complete transcript-shaped starts and endings. The reduction from 13
+fragments to four complete source runs is a clear boundary improvement, but
+the cut is **not publish-ready**. One bit is 182 seconds, the starts remain
+conversational rather than authored hooks, and the planner still has no global
+representation of the requested problem → failure/tradeoff → advice outline.
+The next bottleneck is therefore outline/beat coverage and seam quality, not
+another boundary-threshold retune.
+
+The audio sources contain no embedded cover art. The compliant visual lane
+uses explicit clip-relative EDL entries to hold frames or play moving footage
+from the existing Public Domain Mark 1.0 `You Bet Your Life` archive, with a
+separate on-screen visual credit and provenance URL. The continuous-motion
+46.29-second proof is
+`output/zeropod-short-proof/conviction-motion.mp4`. Automatic semantic image
+selection remains out of scope; the operator supplies the licensed visual
+manifest, and the renderer never downloads or generates filler.
 
 ## Feasibility audit (2026-07-26)
 
@@ -224,6 +300,10 @@ downscales the entire render.
   preferred over better-scoring short ones; semantic and random baselines in
   the same machinery; brief parsing into query plus ordered beats with a regex
   fallback that also covers the no-key case.
+- **Short-form planning** — strict 30–60 second output from contiguous stored
+  transcript cues around retrieved anchors; exact cue boundaries instead of
+  truncating a long editorial bit; one normal EDL with all eight score terms
+  and no rewritten or generated speech.
 - **EDL** — pretty-printed, key-sorted JSON carrying clips, score, all eight
   term values, the weight profile, the calibrated thresholds and
   human-readable rationale; plus a transcript preview for review without a
@@ -240,7 +320,9 @@ downscales the entire render.
   extraction with EBU R128 loudness normalisation and cached intermediates;
   concat-demuxer join or xfade crossfades; subtitles rebased onto the output
   timeline as sidecar or burned in; audio-only clips composited over a neutral
-  card.
+  card; persistent spoken-source heading and watermark; optional
+  provenance-backed still or motion inserts with interval-bound on-screen
+  visual credits.
 - **Validation harness** — five-condition blind generation with a seeded label
   shuffle and a separately withheld `KEY.json`; rating sheet; unblinded
   criteria analysis; mechanical `timeline_churn` against the kill criterion.

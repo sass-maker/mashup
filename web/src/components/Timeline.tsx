@@ -129,7 +129,9 @@ export default function Timeline() {
       const replacement: Clip = {
         ...old,
         segment_id: candidate.id,
+        segment_ids: [candidate.id],
         source_id: candidate.source_id,
+        source_title: candidate.source_title,
         source_path: candidate.source_path,
         start: candidate.start,
         end: candidate.end,
@@ -140,6 +142,7 @@ export default function Timeline() {
         role: candidate.role,
         energy: candidate.energy,
         topics: [...candidate.topics],
+        visuals: [],
         edited: true,
         note: appendNote(old.note, `replaced ${old.segment_id}`),
       };
@@ -160,12 +163,14 @@ export default function Timeline() {
         direction === 'next'
           ? {
               ...clip,
+              segment_ids: [...(clip.segment_ids || [clip.segment_id]), neighbour.id],
               end: neighbour.end,
               render_end: neighbour.end,
               text: `${clip.text}\n\n${neighbour.text}`,
             }
           : {
               ...clip,
+              segment_ids: [neighbour.id, ...(clip.segment_ids || [clip.segment_id])],
               start: neighbour.start,
               render_start: neighbour.start,
               text: `${neighbour.text}\n\n${clip.text}`,

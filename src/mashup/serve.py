@@ -166,6 +166,24 @@ def _sequence(edl: EDL, archive: Archive) -> list[Segment]:
     """
     seq: list[Segment] = []
     for clip in edl.clips:
+        member_ids = clip.segment_ids or [clip.segment_id]
+        members = [archive.by_id.get(segment_id) for segment_id in member_ids]
+        if len(members) > 1 and all(member is not None for member in members):
+            from mashup.segment.editorial import merge_editorial_bit
+
+            stored_members = [member for member in members if member is not None]
+            anchor = archive.by_id.get(clip.segment_id) or stored_members[0]
+            merged = merge_editorial_bit(stored_members, anchor)
+            seq.append(
+                merged.model_copy(
+                    update={
+                        "start": clip.start,
+                        "end": clip.end,
+                        "text": clip.text,
+                    }
+                )
+            )
+            continue
         stored = archive.by_id.get(clip.segment_id)
         if stored is not None:
             seq.append(stored)

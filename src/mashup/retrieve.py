@@ -209,8 +209,12 @@ class Retriever:
         )
 
     def pairwise(self, a: Segment, b: Segment) -> float:
-        ia, ib = self._index[a.id], self._index[b.id]
-        return float(self.matrix[ia] @ self.matrix[ib])
+        ia, ib = self._index.get(a.id), self._index.get(b.id)
+        if ia is not None and ib is not None:
+            return float(self.matrix[ia] @ self.matrix[ib])
+        if not a.embedding or not b.embedding:
+            return 0.0
+        return float(_unit(a.embedding) @ _unit(b.embedding))
 
     def search(
         self,

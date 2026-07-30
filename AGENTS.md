@@ -35,9 +35,12 @@ the scoring terms.
 - **Only creator-owned or public-domain material.** `scripts/fetch_archive.py`
   refuses `-nd` licences and writes `PROVENANCE.json`. Do not add a YouTube
   downloader or bypass the licence gate.
-- **No generated content.** No synthesised dialogue, narration, or footage.
-  Every frame of output comes from an existing clip. This is a product
-  boundary, not a technical limitation.
+- **No generated speech or deceptive footage.** Do not synthesise dialogue,
+  narration, voice clones, or photoreal footage presented as recorded reality.
+  Owner-approved procedural non-photoreal motion graphics, typography, shaders,
+  and ASCII animation are allowed as a visual layer. Existing filmed or
+  photographic media still requires creator ownership or recorded
+  public-domain/licence provenance.
 - **Model access goes through the fleet free-ai gateway.** No provider keys
   belong in this repo. See `config.py` for the env contract.
 - **Expensive stages must stay resumable.** Transcription, enrichment, and

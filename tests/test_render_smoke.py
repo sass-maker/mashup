@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from mashup.models import EDL, Clip, Role
+from mashup.models import EDL, Clip, Role, VisualInsert
 from mashup.render import render
 from mashup.render.boundaries import ToolError
 from mashup.render.cut import MissingSourceError, has_subtitles_filter, probe
@@ -78,6 +78,7 @@ def make_edl(*paths_and_spans) -> EDL:
                 index=i,
                 segment_id=f"seg-{i}",
                 source_id=path.stem,
+                source_title=f"Source episode {path.stem}",
                 source_path=str(path),
                 start=start,
                 end=end,
@@ -172,6 +173,162 @@ def test_intermediates_are_reused_on_rerender(media, tmp_path):
 
     assert before == after, "unchanged clips should not be re-encoded"
     assert any("cached" in e for e in events)
+
+
+def _frame_hash(path: Path, at: float = 0.2) -> str:
+    result = subprocess.run(
+        [
+            FFMPEG,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            str(path),
+            "-ss",
+            str(at),
+            "-frames:v",
+            "1",
+            "-f",
+            "framemd5",
+            "-",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout
+
+
+def test_source_label_changes_the_rendered_pixels(media, tmp_path):
+    edl = make_edl((media / "a.mp4", 0.0, 1.5))
+    labeled = render(
+        edl,
+        tmp_path / "labeled.mp4",
+        workdir=tmp_path / "labeled-work",
+        subtitles="none",
+    )
+    clean = render(
+        edl,
+        tmp_path / "clean.mp4",
+        workdir=tmp_path / "clean-work",
+        subtitles="none",
+        source_label=False,
+        watermark=False,
+    )
+
+    assert _frame_hash(labeled) != _frame_hash(clean)
+
+
+def test_custom_watermark_changes_pixels_and_cache_key(media, tmp_path):
+    edl = make_edl((media / "a.mp4", 0.0, 1.5))
+    work = tmp_path / "work"
+    first = render(
+        edl,
+        tmp_path / "first.mp4",
+        workdir=work,
+        subtitles="none",
+        source_label=False,
+        watermark_text="FIRST",
+    )
+    before = set((work / "parts").iterdir())
+    second = render(
+        edl,
+        tmp_path / "second.mp4",
+        workdir=work,
+        subtitles="none",
+        source_label=False,
+        watermark_text="SECOND",
+    )
+    after = set((work / "parts").iterdir())
+
+    assert _frame_hash(first) != _frame_hash(second)
+    assert len(after - before) == 1
+
+
+def test_motion_visual_plays_consecutive_source_frames(media, tmp_path):
+    edl = make_edl((media / "voice.m4a", 0.0, 2.5))
+    edl.clips[0].visuals = [
+        VisualInsert(
+            mode="motion",
+            start=0.2,
+            end=2.2,
+            source_path=str(media / "a.mp4"),
+            source_time=0.1,
+            source_title="Synthetic public-domain motion",
+        )
+    ]
+    motion = render(
+        edl,
+        tmp_path / "motion.mp4",
+        workdir=tmp_path / "motion-work",
+        subtitles="none",
+        source_label=False,
+        watermark=False,
+    )
+
+    assert _frame_hash(motion, 0.6) != _frame_hash(motion, 1.4)
+
+
+def test_archival_visual_appears_only_in_its_interval_and_invalidates_cache(media, tmp_path):
+    edl = make_edl((media / "voice.m4a", 0.0, 2.5))
+    edl.clips[0].visuals = [
+        VisualInsert(
+            start=0.6,
+            end=1.8,
+            source_path=str(media / "a.mp4"),
+            source_time=0.4,
+            source_title="Synthetic public-domain visual",
+            source_url="https://example.test/provenance",
+        )
+    ]
+    work = tmp_path / "visual-work"
+    visualized = render(
+        edl,
+        tmp_path / "visualized.mp4",
+        workdir=work,
+        subtitles="none",
+        source_label=False,
+        watermark=False,
+    )
+    before = set((work / "parts").iterdir())
+
+    clean = make_edl((media / "voice.m4a", 0.0, 2.5))
+    clean_render = render(
+        clean,
+        tmp_path / "clean.mp4",
+        workdir=tmp_path / "clean-work",
+        subtitles="none",
+        source_label=False,
+        watermark=False,
+    )
+    assert _frame_hash(visualized, 1.0) != _frame_hash(clean_render, 1.0)
+
+    changed = edl.model_copy(deep=True)
+    changed.clips[0].visuals[0].source_time = 1.0
+    render(
+        changed,
+        tmp_path / "changed.mp4",
+        workdir=work,
+        subtitles="none",
+        source_label=False,
+        watermark=False,
+    )
+    after = set((work / "parts").iterdir())
+    assert len(after - before) == 1
+
+
+def test_source_change_invalidates_only_the_intermediate_key(media, tmp_path):
+    edl = make_edl((media / "a.mp4", 0.0, 1.5))
+    work = tmp_path / "work"
+    render(edl, tmp_path / "first.mp4", workdir=work, subtitles="none")
+    before = set((work / "parts").iterdir())
+
+    changed = edl.model_copy(deep=True)
+    changed.clips[0].source_title = "A different source title"
+    render(changed, tmp_path / "second.mp4", workdir=work, subtitles="none")
+    after = set((work / "parts").iterdir())
+
+    assert len(after - before) == 1
 
 
 def test_missing_source_lists_every_offender(tmp_path):

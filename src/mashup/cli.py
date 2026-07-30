@@ -16,6 +16,7 @@ from mashup.ordertest import DEFAULT_SHUFFLES
 from mashup.pipeline import DEFAULT_POOL
 from mashup.plan.prompt import parse_duration
 from mashup.render import edl_to_transcript, load_edl, render, save_edl
+from mashup.shorts import attach_visual_manifest, validate_short_duration
 
 app = typer.Typer(
     add_completion=False,
@@ -236,6 +237,21 @@ def build(
     crossfade: Annotated[float, typer.Option("--crossfade", help="Seconds; 0 = hard cuts")] = 0.0,
     snap: Annotated[bool, typer.Option("--snap/--no-snap", help="Snap cuts to pauses")] = True,
     subtitles: Annotated[str, typer.Option("--subtitles", help="none|sidecar|burn")] = "sidecar",
+    source_label: Annotated[
+        bool,
+        typer.Option(
+            "--source-label/--no-source-label",
+            help="Show source title and original timecode in the video",
+        ),
+    ] = True,
+    watermark: Annotated[
+        bool,
+        typer.Option("--watermark/--no-watermark", help="Show a persistent watermark"),
+    ] = True,
+    watermark_text: Annotated[
+        str,
+        typer.Option("--watermark-text", help="Text shown in the persistent watermark"),
+    ] = "MASHUP",
     baselines: Annotated[
         bool, typer.Option("--baselines", help="Also emit semantic + random controls")
     ] = False,
@@ -268,11 +284,80 @@ def build(
                 out,
                 crossfade=crossfade,
                 subtitles=subtitles,
+                source_label=source_label,
+                watermark=watermark,
+                watermark_text=watermark_text,
                 workdir=cfg.workdir,
                 progress=_status(edl.strategy),
             )
             console.print(f"  -> {out}")
     console.print(f"\n[green]Wrote {len(edls)} variants to {output}[/green]")
+
+
+@app.command()
+def short(
+    prompt: Annotated[str, typer.Option("--prompt", "-p", help="What the short is about")],
+    output: Annotated[Path, typer.Option("--output", "-o")] = Path("output/short.mp4"),
+    duration: Annotated[
+        float, typer.Option("--duration", "-d", help="Target seconds, from 30 to 60")
+    ] = 45.0,
+    workdir: WORKDIR_OPT = None,
+    visuals: Annotated[
+        Path | None,
+        typer.Option("--visuals", help="JSON manifest of clip-relative archival stills"),
+    ] = None,
+    do_render: Annotated[bool, typer.Option("--render/--no-render")] = True,
+    subtitles: Annotated[str, typer.Option("--subtitles", help="none|sidecar|burn")] = "sidecar",
+    source_label: Annotated[
+        bool,
+        typer.Option(
+            "--source-label/--no-source-label",
+            help="Show the persistent spoken-source heading",
+        ),
+    ] = True,
+    watermark: Annotated[
+        bool,
+        typer.Option("--watermark/--no-watermark", help="Show a persistent watermark"),
+    ] = True,
+    watermark_text: Annotated[
+        str,
+        typer.Option("--watermark-text", help="Text shown in the persistent watermark"),
+    ] = "MASHUP",
+) -> None:
+    """Make one complete 30–60 second source-faithful cut."""
+    try:
+        target = validate_short_duration(duration)
+    except ValueError as exc:
+        err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+
+    cfg = _runnable(workdir, embed=True)
+    edl = pipeline.make_short(prompt, cfg, target=target)
+    if visuals is not None:
+        try:
+            edl = attach_visual_manifest(edl, visuals)
+        except ValueError as exc:
+            err.print(f"[red]{exc}[/red]")
+            raise typer.Exit(2) from exc
+
+    output = output.with_suffix(".mp4")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    save_edl(edl, output.with_suffix(".json"))
+    _summarise(edl)
+    if do_render:
+        render(
+            edl,
+            output,
+            subtitles=subtitles,
+            source_label=source_label,
+            watermark=watermark,
+            watermark_text=watermark_text,
+            workdir=cfg.workdir,
+            progress=_status("short"),
+        )
+        console.print(f"[green]{output}[/green]")
+    else:
+        console.print(f"[green]{output.with_suffix('.json')}[/green]")
 
 
 @app.command()
@@ -288,6 +373,21 @@ def render_cmd(
     workdir: WORKDIR_OPT = None,
     crossfade: Annotated[float, typer.Option("--crossfade")] = 0.0,
     subtitles: Annotated[str, typer.Option("--subtitles")] = "sidecar",
+    source_label: Annotated[
+        bool,
+        typer.Option(
+            "--source-label/--no-source-label",
+            help="Show source title and original timecode in the video",
+        ),
+    ] = True,
+    watermark: Annotated[
+        bool,
+        typer.Option("--watermark/--no-watermark", help="Show a persistent watermark"),
+    ] = True,
+    watermark_text: Annotated[
+        str,
+        typer.Option("--watermark-text", help="Text shown in the persistent watermark"),
+    ] = "MASHUP",
 ) -> None:
     """Render an (optionally hand-edited) EDL to MP4."""
     cfg = _config(workdir, require_key=False)
@@ -297,6 +397,9 @@ def render_cmd(
         output,
         crossfade=crossfade,
         subtitles=subtitles,
+        source_label=source_label,
+        watermark=watermark,
+        watermark_text=watermark_text,
         workdir=cfg.workdir,
         progress=_status("render"),
     )

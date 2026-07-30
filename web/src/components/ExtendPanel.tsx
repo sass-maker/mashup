@@ -42,7 +42,8 @@ export function ExtendPanel({ clip, busy, onExtend, onClose }: Props) {
     >
       <div className="panel-head">
         <span className="panel-note">
-          Adjacent material in <span className="mono">{clip.source_id}</span>
+          Adjacent material in{" "}
+          <span className="mono">{clip.source_title || clip.source_id}</span>
         </span>
         <button type="button" className="btn" onClick={onClose}>
           close

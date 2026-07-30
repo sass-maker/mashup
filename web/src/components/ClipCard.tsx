@@ -42,6 +42,7 @@ export const ClipCard = forwardRef<HTMLLIElement, Props>(function ClipCard(props
     onReplace,
     onExtend,
   } = props;
+  const source = clip.source_title || clip.source_id;
 
   return (
     <li
@@ -49,9 +50,9 @@ export const ClipCard = forwardRef<HTMLLIElement, Props>(function ClipCard(props
       className={`card${selected ? ' is-selected' : ''}${clip.edited ? ' is-edited' : ''}`}
       tabIndex={0}
       aria-current={selected ? 'true' : undefined}
-      aria-label={`Clip ${position + 1} of ${total}, ${clip.source_id} ${timecode(
-        clip.render_start,
-        clip.render_end,
+      aria-label={`Clip ${position + 1} of ${total}, source ${source} at ${timecode(
+        clip.start,
+        clip.end,
       )}`}
       onFocus={onSelect}
       onClick={onSelect}
@@ -84,8 +85,12 @@ export const ClipCard = forwardRef<HTMLLIElement, Props>(function ClipCard(props
 
       <div className="card-body">
         <div className="card-head">
-          <span className="mono source">{clip.source_id}</span>
-          <span className="mono time">{timecode(clip.render_start, clip.render_end)}</span>
+          <span className="mono source" title={`Source: ${clip.source_id}`}>
+            {source}
+          </span>
+          <span className="mono time" title="Original source timecode">
+            {timecode(clip.start, clip.end)}
+          </span>
           <span className="mono dim">{duration(clip.render_end - clip.render_start)}</span>
           <span className={`badge role role-${clip.role}`}>{clip.role}</span>
           <EnergyMeter value={clip.energy} />

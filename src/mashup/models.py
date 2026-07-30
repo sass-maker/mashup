@@ -118,10 +118,20 @@ class Segment(BaseModel):
     meta: SegmentMeta = Field(default_factory=SegmentMeta)
     # Populated by the retrieval stage; not stored inline in the EDL.
     embedding: list[float] | None = None
+    # Planning can join adjacent stored segments into one transient editorial
+    # bit. Stored segments leave these empty; synthetic bits retain both the
+    # complete source provenance and the retrieved anchor that created them.
+    member_segment_ids: list[str] = Field(default_factory=list)
+    anchor_segment_id: str | None = None
 
     @property
     def duration(self) -> float:
         return self.end - self.start
+
+    @property
+    def material_ids(self) -> frozenset[str]:
+        """Stored source material represented by this planning unit."""
+        return frozenset(self.member_segment_ids or [self.id])
 
 
 class ScoreTerms(BaseModel):
@@ -141,12 +151,38 @@ class ScoreTerms(BaseModel):
         return sum(getattr(self, k) * w for k, w in weights.items())
 
 
+class VisualInsert(BaseModel):
+    """One provenance-backed still shown over a clip's existing audio."""
+
+    mode: Literal["still", "motion"] = "still"
+    start: float = Field(ge=0, description="seconds from the start of the rendered clip")
+    end: float = Field(gt=0)
+    source_path: str
+    source_time: float = Field(default=0.0, ge=0)
+    source_title: str
+    source_url: str = ""
+
+    @field_validator("end")
+    @classmethod
+    def _visual_end_after_start(cls, v: float, info) -> float:
+        start = info.data.get("start")
+        if start is not None and v <= start:
+            raise ValueError("visual end must follow its start")
+        return v
+
+
 class Clip(BaseModel):
     """One segment placed in a sequence, with the exact cut points to render."""
 
     index: int
     segment_id: str
+    # Ordered stored segments used by a context-repaired editorial bit.
+    # Empty on legacy EDLs, where `segment_id` remains the sole member.
+    segment_ids: list[str] = Field(default_factory=list)
     source_id: str
+    # Human-readable archive title for timeline provenance. Legacy EDLs fall
+    # back to `source_id`.
+    source_title: str = ""
     source_path: str
     # Segment boundaries as understood by the planner.
     start: float
@@ -160,6 +196,8 @@ class Clip(BaseModel):
     role: Role
     energy: float
     topics: list[str] = Field(default_factory=list)
+    # Optional provenance-backed frames shown while this clip's audio continues.
+    visuals: list[VisualInsert] = Field(default_factory=list)
     transition: Literal["cut", "crossfade"] = "cut"
     # Set when a human edits the timeline, so re-renders keep provenance.
     edited: bool = False

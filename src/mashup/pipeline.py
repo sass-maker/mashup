@@ -31,8 +31,13 @@ from mashup.retrieve import (
     embed_segments,
     nonsense_probes,
 )
+from mashup.segment.editorial import (
+    build_editorial_candidates,
+    review_candidate_boundaries,
+)
 from mashup.segment.enrich import enrich_segments
 from mashup.segment.splitter import split_source
+from mashup.shorts import build_short_candidates, validate_short_duration
 from mashup.store import Store
 
 AI_STRATEGIES = ("chronological", "escalation", "callback")
@@ -142,8 +147,10 @@ def _clip_from_segment(
         render_start, render_end = snap_boundaries(seg.start, seg.end, silences=silences, cues=cues)
     return Clip(
         index=index,
-        segment_id=seg.id,
+        segment_id=seg.anchor_segment_id or seg.id,
+        segment_ids=list(seg.member_segment_ids or [seg.id]),
         source_id=seg.source_id,
+        source_title=source.title,
         source_path=source.path,
         start=seg.start,
         end=seg.end,
@@ -210,7 +217,14 @@ class Planning:
 
 
 @contextmanager
-def planning_session(prompt: str, cfg: Config, *, target: float, pool: int) -> Iterator[Planning]:
+def planning_session(
+    prompt: str,
+    cfg: Config,
+    *,
+    target: float,
+    pool: int,
+    editorial: bool = True,
+) -> Iterator[Planning]:
     """Open the store, embed the brief, retrieve, and calibrate.
 
     Shared by every entry point that plans, so a matched-set run and a
@@ -252,20 +266,58 @@ def planning_session(prompt: str, cfg: Config, *, target: float, pool: int) -> I
         # project exists to make.
         baseline_candidates = retriever.search(query_vec, top_k=pool)
 
+        # The callback strategy needs material MMR deliberately removed, so it
+        # plans over the diversified pool plus the entity-linked clips that
+        # make a payoff possible at all.
+        from mashup.plan.score import common_entities
+
+        callback_pool = retriever.entity_expansion(
+            candidates,
+            query_vec,
+            common=common_entities([c.segment for c in candidates]),
+        )
+        if editorial:
+            chat = make_chat(
+                cfg,
+                gateway=Gateway(cfg) if cfg.chat_backend == "gateway" else None,
+            )
+            reviews = review_candidate_boundaries(
+                [*candidates, *baseline_candidates, *callback_pool],
+                segments,
+                chat,
+                cfg.cache_dir,
+            )
+            candidates = build_editorial_candidates(
+                candidates,
+                segments,
+                query_vec,
+                label="AI",
+                reviews=reviews,
+            )
+            baseline_candidates = build_editorial_candidates(
+                baseline_candidates,
+                segments,
+                query_vec,
+                label="baseline",
+                reviews=reviews,
+            )
+            callback_pool = build_editorial_candidates(
+                callback_pool,
+                segments,
+                query_vec,
+                label="callback",
+                reviews=reviews,
+            )
+
         ctx = prepare_context(
             ctx,
-            [c.segment for c in candidates] + [c.segment for c in baseline_candidates],
+            [c.segment for c in candidates]
+            + [c.segment for c in baseline_candidates]
+            + [c.segment for c in callback_pool],
             # A required_context string ("the audience knows he is a plumber")
             # is a statement compared against other transcript, not a search
             # intent, so it takes the document side of an asymmetric model.
             lambda texts: embedder.embed(texts, kind="document"),
-        )
-
-        # The callback strategy needs material MMR deliberately removed, so it
-        # plans over the diversified pool plus the entity-linked clips that
-        # make a payoff possible at all.
-        callback_pool = retriever.entity_expansion(
-            candidates, query_vec, common=ctx.common_entities
         )
         yield Planning(
             store=store,
@@ -286,7 +338,7 @@ def check_coverage(prompt: str, cfg: Config) -> Coverage:
     cannot serve still produces five confident-looking variants, all of them
     built from clips no better matched than random text would have found.
     """
-    with planning_session(prompt, cfg, target=1.0, pool=1) as session:
+    with planning_session(prompt, cfg, target=1.0, pool=1, editorial=False) as session:
         return session.coverage
 
 
@@ -322,6 +374,55 @@ def make_mashups(
             )
             for r in results
         ]
+
+
+def make_short(
+    prompt: str,
+    cfg: Config,
+    *,
+    target: float = 45.0,
+    pool: int = DEFAULT_POOL,
+    crossfade: float = 0.0,
+) -> EDL:
+    """Select one complete cue-level 30–60 second cut."""
+    validate_short_duration(target)
+    with planning_session(prompt, cfg, target=target, pool=pool, editorial=False) as session:
+        cues_by_source = {
+            source.id: session.store.get_cues(source.id) for source in session.store.get_sources()
+        }
+        candidates = build_short_candidates(
+            session.candidates,
+            cues_by_source,
+            target=target,
+        )
+        result = plan(
+            "escalation",
+            candidates,
+            session.ctx,
+            session.retriever.pairwise,
+            max_clips=1,
+        )
+        edl = result_to_edl(
+            result,
+            session.request,
+            cfg,
+            session.store,
+            target=target,
+            # Cue boundaries are the duration contract. Outward snapping could
+            # turn a valid 60-second result into an invalid short.
+            snap=False,
+            crossfade=crossfade,
+            calibration=session.ctx.calibration,
+        )
+        return edl.model_copy(
+            update={
+                "strategy": "short",
+                "rationale": [
+                    "short-form: one contiguous cue-level source window",
+                    *edl.rationale,
+                ],
+            }
+        )
 
 
 # The two orders compared when sequencing is tested on its own.

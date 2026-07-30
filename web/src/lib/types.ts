@@ -17,10 +17,22 @@ export const ROLES: Role[] = [
   'aside',
 ];
 
+export interface VisualInsert {
+  mode: 'still' | 'motion';
+  start: number;
+  end: number;
+  source_path: string;
+  source_time: number;
+  source_title: string;
+  source_url: string;
+}
+
 export interface Clip {
   index: number;
   segment_id: string;
+  segment_ids: string[];
   source_id: string;
+  source_title: string;
   source_path: string;
   start: number;
   end: number;
@@ -31,6 +43,7 @@ export interface Clip {
   role: Role;
   energy: number;
   topics: string[];
+  visuals: VisualInsert[];
   transition: 'cut' | 'crossfade';
   edited: boolean;
   note: string | null;
