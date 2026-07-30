@@ -22,8 +22,8 @@ into the apparatus and produced zero human judgments. The next action must
 produce a human judgment, not a better instrument.
 
 **Users:** one operator — the author — publishing finished cuts to their own
-YouTube channel. Decided 2026-07-26: the software is not released to anyone
-else, so there is no second operator to design for.
+YouTube channel. The source is publicly readable, but there is no packaged
+release, hosted service, or second operator to design for.
 
 Three consequences, recorded because they were conflated once already:
 
@@ -89,6 +89,8 @@ heterogeneous material (see Planned #3).
 
 ## Timeline
 
+- 2026-07-30 — made the canonical GitHub repository publicly readable. This is
+  source visibility, not a packaged release or project-wide software license.
 - 2026-07-25 — repo scaffolded; OpenSpec change `build-mashup-mvp` written.
 - 2026-07-25 — Python pipeline built end to end in-repo: ingest, segment,
   enrich, embed, retrieve, plan, EDL, render, editor server, experiment
@@ -180,6 +182,9 @@ downscales the entire render.
 
 ## Products
 
+- Public source and roadmap —
+  [`sarthakagrawal927/mashup`](https://github.com/sarthakagrawal927/mashup)
+  and [GitHub Issues](https://github.com/sarthakagrawal927/mashup/issues).
 - `mashup` CLI (`uv run mashup`) — the whole pipeline. Subcommands: `ingest`,
   `enrich`, `embed`, `models`, `status`, `coverage`, `build`, `preview`,
   `render`, `serve`, `order-test`, `experiment`, `evaluate`, `churn`;
