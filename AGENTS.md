@@ -1,9 +1,9 @@
-## Shared Fleet Standard
+## Archived repository
 
-Also read and follow the shared fleet-level agent standard at `../AGENTS.md`.
-Treat this repository as owned product code: protect stability, keep changes
-scoped, verify work, and record durable follow-up tasks when something remains
-incomplete or blocked.
+Do not add product behavior here. The maintained implementation is
+[`foundry/services/reel-pipeline/editorial`](https://github.com/sass-maker/fleet-workspace/tree/main/foundry/services/reel-pipeline/editorial)
+in the private Fleet Workspace. This repository remains public only for history
+and attribution.
 
 ## Project
 

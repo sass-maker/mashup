@@ -1,6 +1,6 @@
 # mashup — PROJECT STATUS
 
-Last updated: 2026-07-29
+Last updated: 2026-07-30
 
 ## Why / What
 
@@ -89,6 +89,12 @@ heterogeneous material (see Planned #3).
 
 ## Timeline
 
+- 2026-07-30 — retired the standalone product boundary after confirming that
+  its changed implementation, tests, editor, provenance, short-form, and visual
+  probe work is incorporated under
+  `foundry/services/reel-pipeline/editorial/`. Fleet's canonical runtime is
+  ahead with podcast-contract export and snapped-overlap protection. Remaining
+  operator decisions moved to Fleet issue #73.
 - 2026-07-30 — made the canonical GitHub repository publicly readable. This is
   source visibility, not a packaged release or project-wide software license.
 - 2026-07-25 — repo scaffolded; OpenSpec change `build-mashup-mvp` written.
@@ -579,6 +585,5 @@ cues), and Whisper hallucinated a stock "Thank you." over non-speech audio
 
 ## Work queue
 
-Open work is tracked only in [GitHub Issues](https://github.com/sarthakagrawal927/mashup/issues).
-An open issue is a to-do, a linked pull request is in progress, and merge plus
-issue closure makes the work done.
+The historical issue queue is closed. Any still-relevant editorial follow-up is
+owned by [Fleet issue #73](https://github.com/sass-maker/fleet-workspace/issues/73).

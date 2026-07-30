@@ -1,5 +1,12 @@
 # mashup
 
+> [!IMPORTANT]
+> This repository is an archived historical snapshot. The maintained
+> implementation is
+> [`foundry/services/reel-pipeline/editorial`](https://github.com/sass-maker/fleet-workspace/tree/main/foundry/services/reel-pipeline/editorial)
+> in the private Fleet Workspace. Remaining editorial follow-up is tracked in
+> [Fleet issue #73](https://github.com/sass-maker/fleet-workspace/issues/73).
+
 Turn a creator-owned video or podcast archive into coherent themed mashups
 using only clips that already exist. Point it at a folder of recordings plus a
 one-line brief and it emits several alternative cuts as editable EDL JSON and
