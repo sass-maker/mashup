@@ -16,6 +16,7 @@ from pathlib import Path
 
 from mashup.chat import make_chat
 from mashup.config import Config
+from mashup.content_integrity import remove_snapped_render_overlap
 from mashup.embedding import make_embedder
 from mashup.gateway import Gateway
 from mashup.ingest import ingest_archive
@@ -59,16 +60,28 @@ def ingest(
 ) -> dict[str, int]:
     """Ingest media + subtitles and split into segments."""
     cfg.ensure_dirs()
+    skipped_sources = 0
+
+    def report_unreadable(path: Path, error: Exception) -> None:
+        nonlocal skipped_sources
+        skipped_sources += 1
+        if progress is not None:
+            progress(f"Skipped unreadable source {path.name}: {error}")
+
     with Store(cfg.db_path) as store:
         items = ingest_archive(
             archive_dir,
             workdir=cfg.workdir,
             allow_transcribe=allow_transcribe,
+            skip_unreadable=True,
+            on_error=report_unreadable,
         )
         for source, cues in items:
             store.upsert_source(source, cues)
             store.replace_segments(source.id, split_source(source.id, cues))
-        return store.counts()
+        counts = store.counts()
+        counts["skipped_sources"] = skipped_sources
+        return counts
 
 
 # Segments per store write during enrichment. Small enough that a crash costs
@@ -183,6 +196,7 @@ def result_to_edl(
         )
         for i, seg in enumerate(result.sequence)
     ]
+    clips = remove_snapped_render_overlap(clips)
     from mashup.plan.score import WEIGHT_PROFILES
 
     return EDL(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Annotated
 
@@ -10,11 +11,15 @@ from rich.console import Console
 from rich.table import Table
 
 from mashup import pipeline
+from mashup.agent import failure as agent_failure
+from mashup.agent import read_agent_request, run_agent
 from mashup.config import ConfigError, load_config
+from mashup.media_receipt import build_media_receipt, save_media_receipt
 from mashup.models import EDL
 from mashup.ordertest import DEFAULT_SHUFFLES
 from mashup.pipeline import DEFAULT_POOL
 from mashup.plan.prompt import parse_duration
+from mashup.podcast_contract import export_podcast_edit, save_podcast_edit
 from mashup.render import edl_to_transcript, load_edl, render, save_edl
 from mashup.shorts import attach_visual_manifest, validate_short_duration
 
@@ -111,6 +116,23 @@ def _summarise(edl: EDL) -> None:
 # ---- stages -------------------------------------------------------------
 
 
+@app.command(name="agent")
+def agent_cmd(
+    request: Annotated[
+        Path | None, typer.Option("--request", help="JSON request file; defaults to stdin")
+    ] = None,
+) -> None:
+    """Execute one strict machine-readable agent operation."""
+    raw = None
+    try:
+        raw = read_agent_request(request)
+        result = run_agent(raw)
+        print(json.dumps(result, sort_keys=True, separators=(",", ":")))
+    except Exception as exc:  # protocol boundary normalizes every failure
+        print(json.dumps(agent_failure(raw, exc), sort_keys=True, separators=(",", ":")))
+        raise typer.Exit(1) from exc
+
+
 @app.command()
 def ingest(
     input_dir: Annotated[Path, typer.Option("--input", "-i", help="Archive directory")],
@@ -121,7 +143,7 @@ def ingest(
 ) -> None:
     """Ingest media + subtitles and split into segments."""
     cfg = _config(workdir, require_key=False)
-    counts = pipeline.ingest(input_dir, cfg, allow_transcribe=transcribe)
+    counts = pipeline.ingest(input_dir, cfg, allow_transcribe=transcribe, progress=_notice)
     _show_counts(counts)
 
 
@@ -366,6 +388,43 @@ def preview(edl_path: Annotated[Path, typer.Argument()]) -> None:
     console.print(edl_to_transcript(load_edl(edl_path)))
 
 
+@app.command(name="export-podcast-edit")
+def export_podcast_edit_cmd(
+    edl_path: Annotated[Path, typer.Argument(help="Existing Mashup EDL JSON")],
+    output: Annotated[Path, typer.Option("--output", "-o")],
+    provenance: Annotated[
+        Path,
+        typer.Option(
+            "--provenance",
+            help="Rights/provenance JSON covering every source file in the EDL",
+        ),
+    ],
+    edit_id: Annotated[str | None, typer.Option("--id", help="Stable edit identity")] = None,
+    approval: Annotated[
+        str,
+        typer.Option("--approval", help="proposed|approved|rejected"),
+    ] = "proposed",
+    approved_by: Annotated[str | None, typer.Option("--approved-by")] = None,
+    watermark_text: Annotated[str, typer.Option("--watermark-text")] = "MASHUP",
+) -> None:
+    """Export a source-backed EDL for Mashup approval and rendering."""
+    edl = load_edl(edl_path)
+    try:
+        payload = export_podcast_edit(
+            edl,
+            edit_id=edit_id or edl_path.stem,
+            provenance_path=provenance,
+            approval_status=approval,
+            approved_by=approved_by,
+            watermark_text=watermark_text,
+        )
+    except ValueError as exc:
+        err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    save_podcast_edit(payload, output)
+    console.print(f"[green]{output}[/green]")
+
+
 @app.command(name="render")
 def render_cmd(
     edl_path: Annotated[Path, typer.Argument()],
@@ -403,6 +462,34 @@ def render_cmd(
         workdir=cfg.workdir,
         progress=_status("render"),
     )
+    console.print(f"[green]{output}[/green]")
+
+
+@app.command(name="media-receipt")
+def media_receipt_cmd(
+    podcast_edit_path: Annotated[Path, typer.Argument(help="Approved fleet.podcast-edit.v1 JSON")],
+    video: Annotated[Path, typer.Option("--video", help="Completed local MP4")],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Receipt JSON destination")],
+    duration: Annotated[float, typer.Option("--duration", help="Artifact duration in seconds")],
+    width: Annotated[int, typer.Option("--width")],
+    height: Annotated[int, typer.Option("--height")],
+    captions: Annotated[Path | None, typer.Option("--captions")] = None,
+) -> None:
+    """Create the independent finished-media handoff without reading Mashup state."""
+    try:
+        payload = json.loads(podcast_edit_path.read_text(encoding="utf-8"))
+        receipt = build_media_receipt(
+            payload,
+            video_path=video,
+            captions_path=captions,
+            duration_seconds=duration,
+            width=width,
+            height=height,
+        )
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    save_media_receipt(receipt, output)
     console.print(f"[green]{output}[/green]")
 
 

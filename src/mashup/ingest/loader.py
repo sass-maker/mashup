@@ -9,11 +9,12 @@ produces stable references.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from pathlib import Path
 
-from mashup.ingest.media import find_subtitle_for, probe_media
-from mashup.ingest.subtitles import parse_subtitles
-from mashup.ingest.transcribe import transcribe
+from mashup.ingest.media import MediaError, find_subtitle_for, probe_media
+from mashup.ingest.subtitles import SubtitleError, parse_subtitles
+from mashup.ingest.transcribe import TranscribeError, transcribe
 from mashup.models import Cue, Source
 
 MEDIA_SUFFIXES = frozenset({".mp4", ".mkv", ".mov", ".mp3", ".m4a", ".wav"})
@@ -71,6 +72,8 @@ def ingest_archive(
     workdir: Path,
     allow_transcribe: bool,
     start_ordinal: int = 0,
+    skip_unreadable: bool = False,
+    on_error: Callable[[Path, Exception], None] | None = None,
 ) -> list[tuple[Source, list[Cue]]]:
     """Ingest every media file under `archive_dir`, in filename order.
 
@@ -88,15 +91,32 @@ def ingest_archive(
     if not files:
         raise IngestError(f"No media files ({', '.join(sorted(MEDIA_SUFFIXES))}) in {archive_dir}")
 
-    return [
-        ingest_source(
-            path,
-            ordinal=start_ordinal + i,
-            workdir=workdir,
-            allow_transcribe=allow_transcribe,
-        )
-        for i, path in enumerate(files)
-    ]
+    items: list[tuple[Source, list[Cue]]] = []
+    errors: list[tuple[Path, Exception]] = []
+    for i, path in enumerate(files):
+        try:
+            items.append(
+                ingest_source(
+                    path,
+                    ordinal=start_ordinal + i,
+                    workdir=workdir,
+                    allow_transcribe=allow_transcribe,
+                )
+            )
+        except (IngestError, MediaError, SubtitleError, TranscribeError) as exc:
+            if not skip_unreadable:
+                raise
+            errors.append((path, exc))
+            if on_error is not None:
+                on_error(path, exc)
+
+    if not items and errors:
+        first_path, first_error = errors[0]
+        raise IngestError(
+            f"No readable media files in {archive_dir}; {len(errors)} failed. "
+            f"First failure: {first_path.name}: {first_error}"
+        ) from first_error
+    return items
 
 
 def slugify(stem: str) -> str:

@@ -12,8 +12,7 @@ dist/
 archive/
 *.part
 
-# Local pipeline state: SQLite store, gateway cache, generated subtitles,
-# render intermediates. Regenerable and large.
+# Local pipeline state and reproducible developer environments.
 .mashup/
 .venv/
 __pycache__/

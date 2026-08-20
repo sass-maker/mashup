@@ -47,6 +47,9 @@ The operator works with local media and reviews generated MP4 and EDL outputs.
 
 - Source heading and watermark remain persistent in rendered video.
 - The active ZEROPOD pilot uses the `ZEROPOD` watermark.
+- Kinetic Type is the selected non-photoreal direction when an operator
+  explicitly requests a visual layer for source speech. Cel Orbit and ASCII
+  Signal remain unselected lab probes, not default product treatments.
 - AnimeShader is a binding exploration reference for cel-shaded depth, ink
   outlines, low-poly geometry, warm environmental color, and authored motion;
   its specific scene, assets, and interface must not be copied.
@@ -66,10 +69,12 @@ The operator works with local media and reviews generated MP4 and EDL outputs.
 - Provenance in the video, not hidden in metadata.
 - Multiple inspectable visual treatments instead of one hard-coded aesthetic.
 - Generated visual craft may support source speech but never replace its meaning.
+- Historical matched-pair, five-condition, and corpus-expansion studies are
+  retired; maintenance focuses on source-faithful CLI reliability rather than
+  reopening a standalone sequencing-research product.
 
 ## Accessibility & Inclusion
 
 Visual treatments must retain readable source information, honor reduced-motion
 preferences in interactive previews, and never make the audio transcript
 dependent on color alone.
-

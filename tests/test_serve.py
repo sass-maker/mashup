@@ -116,7 +116,7 @@ def editor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     )
     cfg.ensure_dirs()
 
-    media = cfg.media_dir / "ep1.mp4"
+    media = cfg.workdir / "ep1.mp4"
     media.write_bytes(MEDIA_BYTES)
 
     segments = [

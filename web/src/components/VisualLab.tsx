@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 
-type Direction = 'cel' | 'ascii' | 'type';
+type Direction = 'cel' | 'diagram' | 'atmospheric' | 'ascii' | 'type';
 
 const DIRECTIONS: Array<{
   id: Direction;
@@ -9,6 +9,8 @@ const DIRECTIONS: Array<{
   short: string;
 }> = [
   { id: 'cel', name: 'Cel Orbit', short: 'WebGL · outlined geometry' },
+  { id: 'diagram', name: 'Signal Diagram', short: 'WebGL · connected nodes' },
+  { id: 'atmospheric', name: 'Light Corridor', short: 'WebGL · camera flight' },
   { id: 'ascii', name: 'ASCII Signal', short: 'Canvas · glyph field' },
   { id: 'type', name: 'Kinetic Type', short: 'Canvas · editorial motion' },
 ];
@@ -25,6 +27,159 @@ function useReducedMotion(): boolean {
     return () => query.removeEventListener('change', sync);
   }, []);
   return reduced;
+}
+
+function ThreeRangeScene({ variant, reduced }: { variant: 'diagram' | 'atmospheric'; reduced: boolean }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = variant === 'diagram' ? 1.15 : 1.35;
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(46, 1, 0.1, 90);
+    const animated: THREE.Object3D[] = [];
+    const materials: THREE.Material[] = [];
+    const geometries: THREE.BufferGeometry[] = [];
+
+    if (variant === 'diagram') {
+      scene.background = new THREE.Color('#06101d');
+      scene.fog = new THREE.Fog('#06101d', 10, 24);
+      camera.position.set(0, 0.6, 11);
+      const group = new THREE.Group();
+      scene.add(group);
+      animated.push(group);
+
+      const coreGeometry = new THREE.TorusKnotGeometry(1.2, 0.34, 128, 18);
+      const coreMaterial = new THREE.MeshStandardMaterial({ color: '#f4c45e', metalness: 0.48, roughness: 0.22 });
+      geometries.push(coreGeometry);
+      materials.push(coreMaterial);
+      const core = new THREE.Mesh(coreGeometry, coreMaterial);
+      group.add(core);
+      animated.push(core);
+
+      const nodePositions = [
+        [-3.6, 2.7, -1.2], [3.8, 2.1, -2.4], [-4.2, -2.0, -3.1], [3.4, -2.8, -1.0],
+        [0.1, 4.1, -4.5], [0.3, -4.0, -3.8], [-5.3, 0.1, -5.2], [5.2, -0.1, -4.8],
+      ].map(([x, y, z]) => new THREE.Vector3(x, y, z));
+      const nodeGeometry = new THREE.IcosahedronGeometry(0.42, 1);
+      const nodeMaterial = new THREE.MeshStandardMaterial({ color: '#64d6ff', emissive: '#0a4261', roughness: 0.35 });
+      geometries.push(nodeGeometry);
+      materials.push(nodeMaterial);
+      for (const [index, position] of nodePositions.entries()) {
+        const node = new THREE.Mesh(nodeGeometry, nodeMaterial);
+        node.position.copy(position);
+        node.userData.phase = index * 0.71;
+        node.userData.baseY = position.y;
+        group.add(node);
+        animated.push(node);
+      }
+      const lineGeometry = new THREE.BufferGeometry().setFromPoints(nodePositions.flatMap((position) => [position, new THREE.Vector3(0, 0, 0)]));
+      const lineMaterial = new THREE.LineBasicMaterial({ color: '#2f7fa1', transparent: true, opacity: 0.58 });
+      geometries.push(lineGeometry);
+      materials.push(lineMaterial);
+      group.add(new THREE.LineSegments(lineGeometry, lineMaterial));
+      const key = new THREE.PointLight('#f4c45e', 38, 18, 2);
+      key.position.set(2, 3, 6);
+      scene.add(key, new THREE.AmbientLight('#80b9d2', 1.8));
+    } else {
+      scene.background = new THREE.Color('#09090d');
+      scene.fog = new THREE.FogExp2('#09090d', 0.075);
+      camera.position.set(0, 0, 13);
+      const corridor = new THREE.Group();
+      scene.add(corridor);
+      animated.push(corridor);
+      const colors = ['#f36b45', '#f1c56b', '#74d8ca'];
+      for (let index = 0; index < 22; index += 1) {
+        const geometry = new THREE.TorusGeometry(2.6 + (index % 3) * 0.38, 0.055 + (index % 2) * 0.025, 8, 48);
+        const material = new THREE.MeshBasicMaterial({ color: colors[index % colors.length], transparent: true, opacity: 0.2 + (index % 4) * 0.08 });
+        geometries.push(geometry);
+        materials.push(material);
+        const ring = new THREE.Mesh(geometry, material);
+        ring.position.z = 9 - index * 1.45;
+        ring.rotation.set(index * 0.11, index * 0.17, index * 0.23);
+        corridor.add(ring);
+        animated.push(ring);
+      }
+      const particleGeometry = new THREE.BufferGeometry();
+      const positions = new Float32Array(600 * 3);
+      for (let index = 0; index < 600; index += 1) {
+        positions[index * 3] = (Math.sin(index * 12.989) * 0.5) * 12;
+        positions[index * 3 + 1] = (Math.sin(index * 78.233) * 0.5) * 18;
+        positions[index * 3 + 2] = 10 - (index % 100) * 0.42;
+      }
+      particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      const particleMaterial = new THREE.PointsMaterial({ color: '#f4ead2', size: 0.035, transparent: true, opacity: 0.66 });
+      geometries.push(particleGeometry);
+      materials.push(particleMaterial);
+      corridor.add(new THREE.Points(particleGeometry, particleMaterial));
+    }
+
+    const resize = () => {
+      const rect = canvas.getBoundingClientRect();
+      renderer.setSize(Math.max(1, rect.width), Math.max(1, rect.height), false);
+      camera.aspect = Math.max(1, rect.width) / Math.max(1, rect.height);
+      camera.updateProjectionMatrix();
+    };
+    const observer = new ResizeObserver(resize);
+    observer.observe(canvas);
+    resize();
+
+    const started = performance.now();
+    let frame = 0;
+    const renderFrame = (now: number) => {
+      const cycle = reduced ? 0.42 : ((now - started) % LOOP_MS) / LOOP_MS;
+      if (variant === 'diagram') {
+        const group = animated[0];
+        group.rotation.y = cycle * Math.PI * 2;
+        group.rotation.x = Math.sin(cycle * Math.PI * 2) * 0.16;
+        const core = animated[1];
+        core.rotation.x = cycle * Math.PI * 1.7;
+        core.rotation.z = cycle * Math.PI * 1.2;
+        for (const node of animated.slice(2)) {
+          node.position.y = Number(node.userData.baseY ?? 0)
+            + Math.sin(cycle * Math.PI * 2 + Number(node.userData.phase ?? 0)) * 0.18;
+        }
+        camera.position.z = 11 - Math.sin(cycle * Math.PI) * 2.4;
+        camera.lookAt(0, 0, -1.4);
+      } else {
+        const corridor = animated[0];
+        corridor.rotation.z = Math.sin(cycle * Math.PI * 2) * 0.22;
+        camera.position.z = 13 - cycle * 18;
+        camera.position.x = Math.sin(cycle * Math.PI * 2) * 0.65;
+        camera.position.y = Math.cos(cycle * Math.PI * 2) * 0.42;
+        camera.lookAt(camera.position.x * 0.25, camera.position.y * 0.25, camera.position.z - 8);
+      }
+      renderer.render(scene, camera);
+      if (!reduced) frame = requestAnimationFrame(renderFrame);
+    };
+    renderFrame(started);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      renderer.dispose();
+      geometries.forEach((geometry) => geometry.dispose());
+      materials.forEach((material) => material.dispose());
+    };
+  }, [reduced, variant]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="probe-canvas"
+      role="img"
+      aria-label={variant === 'diagram'
+        ? 'Three-dimensional signal diagram with connected nodes and an orbiting camera'
+        : 'Three-dimensional luminous corridor with a camera flying through layered rings'}
+    />
+  );
 }
 
 function addOutlinedMesh(
@@ -433,11 +588,19 @@ function KineticType({ reduced }: { reduced: boolean }) {
 
 export default function VisualLab() {
   const [active, setActive] = useState<Direction>('cel');
+  const [captureMode, setCaptureMode] = useState(false);
   const reduced = useReducedMotion();
   const current = DIRECTIONS.find((direction) => direction.id === active) ?? DIRECTIONS[0];
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedDirection = params.get('direction');
+    if (DIRECTIONS.some((direction) => direction.id === requestedDirection)) setActive(requestedDirection as Direction);
+    setCaptureMode(params.get('capture') === '1');
+  }, []);
+
   return (
-    <main className="visual-lab" data-direction={active}>
+    <main className={`visual-lab${captureMode ? ' visual-lab--capture' : ''}`} data-direction={active}>
       <header className="lab-header">
         <div className="lab-title">
           <span className="lab-mark" aria-hidden="true">Z</span>
@@ -463,11 +626,13 @@ export default function VisualLab() {
 
       <section className="probe-stage" aria-live="polite">
         {active === 'cel' && <CelOrbit reduced={reduced} />}
+        {active === 'diagram' && <ThreeRangeScene variant="diagram" reduced={reduced} />}
+        {active === 'atmospheric' && <ThreeRangeScene variant="atmospheric" reduced={reduced} />}
         {active === 'ascii' && <AsciiSignal reduced={reduced} />}
         {active === 'type' && <KineticType reduced={reduced} />}
         <div className="stage-index" aria-hidden="true">
           {String(DIRECTIONS.findIndex((direction) => direction.id === active) + 1).padStart(2, '0')}
-          <span>/ 03</span>
+          <span>/ 05</span>
         </div>
       </section>
 

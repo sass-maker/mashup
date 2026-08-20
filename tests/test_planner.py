@@ -60,6 +60,16 @@ def test_plan_never_repeats_a_segment(cosine_sim):
     assert len(ids) == len(set(ids))
 
 
+def test_plan_supports_a_seven_minute_unique_edit(cosine_sim):
+    target = 420.0
+    result = plan("escalation", build_pool(16), ctx(target), cosine_sim)
+    total = sum(segment.duration for segment in result.sequence)
+    material = [member for segment in result.sequence for member in segment.material_ids]
+
+    assert target * (1 - 0.06) <= total <= target * 1.10
+    assert len(material) == len(set(material))
+
+
 def test_chronological_respects_archive_order(cosine_sim):
     c = ctx()
     result = plan("chronological", build_pool(), c, cosine_sim)

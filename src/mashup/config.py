@@ -72,12 +72,8 @@ class Config:
     def cache_dir(self) -> Path:
         return self.workdir / "cache"
 
-    @property
-    def media_dir(self) -> Path:
-        return self.workdir / "media"
-
     def ensure_dirs(self) -> None:
-        for d in (self.workdir, self.cache_dir, self.media_dir):
+        for d in (self.workdir, self.cache_dir):
             d.mkdir(parents=True, exist_ok=True)
 
 

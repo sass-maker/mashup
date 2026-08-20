@@ -17,6 +17,7 @@ import functools
 import hashlib
 import json
 import re
+from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -123,12 +124,32 @@ def probe(path: Path) -> MediaInfo:
 
 
 def _target_format(edl: EDL, infos: dict[str, MediaInfo]) -> tuple[tuple[int, int], float]:
-    """Resolution/fps of the first video source; 720p30 if the archive is audio-only."""
+    """Choose the modal source format, preferring maximum quality on a tie."""
+    formats: Counter[tuple[int, int, float]] = Counter()
+    seen_sources: set[str] = set()
     for clip in edl.clips:
+        if clip.source_path in seen_sources:
+            continue
+        seen_sources.add(clip.source_path)
         info = infos[clip.source_path]
         if info.has_video and info.width and info.height:
             # Even dimensions are required by yuv420p / libx264.
-            return (info.width - info.width % 2, info.height - info.height % 2), info.fps
+            width = info.width - info.width % 2
+            height = info.height - info.height % 2
+            formats[(width, height, round(info.fps, 3))] += 1
+
+    if formats:
+        width, height, fps = max(
+            formats,
+            key=lambda format_: (
+                formats[format_],
+                format_[0] * format_[1],
+                format_[2],
+                format_[0],
+                format_[1],
+            ),
+        )
+        return (width, height), fps
     return DEFAULT_SIZE, DEFAULT_FPS
 
 
