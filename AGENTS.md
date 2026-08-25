@@ -47,3 +47,31 @@ cd web && pnpm install && pnpm check && pnpm build
   credentials, or generated artifacts.
 - Existing operator workdirs remain external data. Never move or delete them
   automatically when source ownership changes.
+
+## Kept in sync with on-record
+
+`on-record/` (High Signal Podcasts) transcribes podcast audio the same way this
+project does: `whisperkit-cli` over a 16 kHz mono WAV produced by ffmpeg. The
+logic is duplicated on purpose — the two products have different rights
+postures and release cycles, and neither should be able to break the other —
+but duplicated code drifts silently, so treat these as a pair.
+
+| here | there |
+|---|---|
+| `src/mashup/ingest/transcribe.py` | `python/ingest/src/on_record_ingest/transcripts/whisper_local.py` |
+
+Known differences, both deliberate:
+
+- This file is the more careful of the two: two backends resolved lazily, and
+  a model directory from `MASHUP_WHISPERKIT_MODEL` so nothing downloads
+  unasked. on-record pins one backend and one path.
+- on-record additionally diarizes, using `whisperkit-cli --diarization` with
+  the expected speaker count passed in, then assigns each caption cue to the
+  turn it overlaps most. Mashup has no speaker turns today; if clip planning
+  ever needs to tell a host from a guest, that is where the working version
+  lives.
+
+When you change transcription in either repo — model, flags, audio conversion,
+timeout, cleanup — read the other file and say in the commit message whether
+the change applies there too. If it does and you are not making it, note it in
+that repo's issues rather than leaving the two to drift.
