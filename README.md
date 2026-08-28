@@ -23,7 +23,7 @@ The public website screens approved finished results and their provenance. It
 is intentionally static: uploads, archives, rendering, approvals, and posting
 remain local operator responsibilities.
 
-Public proof: <https://mashup-a6h.pages.dev>
+Public proof: <https://mashup.highsignal.app>
 
 ## The thesis
 

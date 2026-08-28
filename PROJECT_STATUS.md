@@ -43,7 +43,7 @@ approval, provenance, and multi-clip rendering.
 ## Products
 
 - Local Mashup CLI and loopback editorial interface.
-- Static [public proof site](https://mashup-a6h.pages.dev) for approved finished
+- Static [public proof site](https://mashup.highsignal.app) for approved finished
   media; it does not host the archive, editor, rendering pipeline, accounts,
   uploads, or publishing.
 
