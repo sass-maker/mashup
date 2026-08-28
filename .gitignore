@@ -24,3 +24,9 @@ __pycache__/
 output/
 experiment/
 study/
+artifacts/
+
+# Generated proof media is injected only into external deployment staging.
+web/public/media/
+web/public/captions/
+web/public/receipts/

@@ -1,6 +1,20 @@
+from pathlib import Path
 from types import SimpleNamespace
 
-from mashup.render.cut import DEFAULT_FPS, DEFAULT_SIZE, MediaInfo, _target_format
+from mashup.render.cut import (
+    DEFAULT_FPS,
+    DEFAULT_SIZE,
+    SOCIAL_SIZE,
+    MediaInfo,
+    _subtitle_filter,
+    _target_format,
+)
+
+
+def test_social_subtitles_stay_inside_the_lower_safe_area() -> None:
+    subtitle_filter = _subtitle_filter(Path("captions.srt"), "social")
+    assert "FontSize=10" in subtitle_filter
+    assert "MarginV=48" in subtitle_filter
 
 
 def info(width: int, height: int, fps: float, *, video: bool = True) -> MediaInfo:
@@ -53,3 +67,10 @@ def test_target_format_counts_each_source_once_and_keeps_audio_only_default():
         DEFAULT_SIZE,
         DEFAULT_FPS,
     )
+
+
+def test_social_profile_is_vertical_and_keeps_source_frame_rate():
+    sources = edl("wide.mp4")
+    infos = {"wide.mp4": info(1920, 1080, 24.0)}
+
+    assert _target_format(sources, infos, "social") == (SOCIAL_SIZE, 24.0)

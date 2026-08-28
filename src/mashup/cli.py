@@ -13,6 +13,8 @@ from rich.table import Table
 from mashup import pipeline
 from mashup.agent import failure as agent_failure
 from mashup.agent import read_agent_request, run_agent
+from mashup.batch import build_batch, save_batch, save_review_html
+from mashup.collections import get_collection, list_collections
 from mashup.config import ConfigError, load_config
 from mashup.media_receipt import build_media_receipt, save_media_receipt
 from mashup.models import EDL
@@ -21,6 +23,7 @@ from mashup.pipeline import DEFAULT_POOL
 from mashup.plan.prompt import parse_duration
 from mashup.podcast_contract import export_podcast_edit, save_podcast_edit
 from mashup.render import edl_to_transcript, load_edl, render, save_edl
+from mashup.render.cut import has_subtitles_filter
 from mashup.shorts import attach_visual_manifest, validate_short_duration
 
 app = typer.Typer(
@@ -382,6 +385,97 @@ def short(
         console.print(f"[green]{output.with_suffix('.json')}[/green]")
 
 
+@app.command(name="collections")
+def collections_cmd() -> None:
+    """List checked-in editorial collections and their reusable angles."""
+    for preset in list_collections():
+        console.print(f"[bold]{preset.id}[/bold] — {preset.description}")
+        console.print("  " + "  ".join(preset.angles))
+        console.print(f"  [dim]{preset.source_policy}[/dim]")
+
+
+@app.command(name="short-batch")
+def short_batch(
+    collection: Annotated[
+        str, typer.Option("--collection", help="Editorial collection")
+    ] = "startups",
+    angle: Annotated[str | None, typer.Option("--angle", help="Named collection angle")] = None,
+    prompt: Annotated[
+        str | None,
+        typer.Option("--prompt", "-p", help="Free-form angle override"),
+    ] = None,
+    count: Annotated[int, typer.Option("--count", "-n", min=3, max=5)] = 5,
+    duration: Annotated[
+        float,
+        typer.Option("--duration", "-d", help="Target seconds per clip, from 30 to 60"),
+    ] = 45.0,
+    output: Annotated[Path, typer.Option("--output", "-o")] = Path("output/startups"),
+    workdir: WORKDIR_OPT = None,
+    do_render: Annotated[bool, typer.Option("--render/--no-render")] = True,
+) -> None:
+    """Prepare one distinct, vertical social batch for local human review."""
+    try:
+        preset = get_collection(collection)
+        angle_id, resolved_prompt = preset.prompt_for(angle, prompt)
+        target = validate_short_duration(duration)
+    except ValueError as exc:
+        err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+
+    if do_render and not has_subtitles_filter():
+        err.print(
+            "[red]The Startups social profile requires burned captions, but this FFmpeg "
+            "build has no libass subtitles filter.[/red]\n"
+            "Install a libass-enabled FFmpeg build, or validate the corpus now with --no-render."
+        )
+        raise typer.Exit(2)
+
+    cfg = _runnable(workdir, embed=True)
+    try:
+        edls = pipeline.make_short_batch(
+            resolved_prompt,
+            cfg,
+            count=count,
+            target=target,
+        )
+    except ValueError as exc:
+        err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+
+    output = output.expanduser().resolve()
+    output.mkdir(parents=True, exist_ok=True)
+    for index, edl in enumerate(edls, start=1):
+        stem = f"clip-{index:02d}"
+        save_edl(edl, output / f"{stem}.json")
+        _summarise(edl)
+        if do_render:
+            render(
+                edl,
+                output / f"{stem}.mp4",
+                subtitles="burn",
+                source_label=True,
+                watermark=True,
+                watermark_text=preset.watermark,
+                profile="social",
+                workdir=cfg.workdir,
+                progress=_status(stem),
+            )
+
+    batch = build_batch(
+        edls,
+        collection=preset.id,
+        collection_name=preset.name,
+        angle=angle_id,
+        prompt=resolved_prompt,
+        source_policy=preset.source_policy,
+        output_dir=output,
+    )
+    manifest = save_batch(batch, output / "batch.json")
+    review = save_review_html(batch, output / "index.html")
+    console.print(f"\n[green]Batch manifest:[/green] {manifest}")
+    console.print(f"[green]Review desk:[/green] {review}")
+
+
 @app.command()
 def preview(edl_path: Annotated[Path, typer.Argument()]) -> None:
     """Print the assembled transcript with source timestamps."""
@@ -447,10 +541,14 @@ def render_cmd(
         str,
         typer.Option("--watermark-text", help="Text shown in the persistent watermark"),
     ] = "MASHUP",
+    profile: Annotated[str, typer.Option("--profile", help="source|social")] = "source",
 ) -> None:
     """Render an (optionally hand-edited) EDL to MP4."""
     cfg = _config(workdir, require_key=False)
     edl = load_edl(edl_path)
+    if profile not in {"source", "social"}:
+        err.print("[red]profile must be source or social[/red]")
+        raise typer.Exit(2)
     render(
         edl,
         output,
@@ -459,6 +557,7 @@ def render_cmd(
         source_label=source_label,
         watermark=watermark,
         watermark_text=watermark_text,
+        profile=profile,
         workdir=cfg.workdir,
         progress=_status("render"),
     )

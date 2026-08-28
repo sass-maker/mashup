@@ -151,6 +151,21 @@ def test_audio_only_source_gets_a_colour_card(media, tmp_path):
     assert not out.with_suffix(".srt").exists()
 
 
+def test_social_profile_renders_vertical_video_without_cropping_contract(media, tmp_path):
+    edl = make_edl((media / "a.mp4", 0.0, 1.2))
+
+    out = render(
+        edl,
+        tmp_path / "social.mp4",
+        workdir=tmp_path / "work",
+        subtitles="none",
+        profile="social",
+    )
+
+    info = probe(out)
+    assert (info.width, info.height) == (1080, 1920)
+
+
 def test_mixed_video_and_audio_only_sources_stay_uniform(media, tmp_path):
     edl = make_edl((media / "a.mp4", 0.0, 1.2), (media / "voice.m4a", 0.0, 1.2))
     out = render(edl, tmp_path / "out.mp4", workdir=tmp_path / "work")

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from mashup import pipeline
+from mashup.collections import get_collection, list_collections
 from mashup.config import load_config
 from mashup.media_receipt import build_media_receipt, validate_media_receipt
 from mashup.models import EDL
@@ -37,6 +38,7 @@ FORBIDDEN_FIELDS = {"command", "shell", "script", "sourceCode", "code", "plugin"
 
 OPERATIONS = [
     ("manifest", "read"),
+    ("collections", "read"),
     ("models", "read"),
     ("status", "read"),
     ("ingest", "write"),
@@ -44,6 +46,7 @@ OPERATIONS = [
     ("embed", "write"),
     ("plan", "plan"),
     ("short-plan", "plan"),
+    ("short-batch-plan", "plan"),
     ("validate-edl", "read"),
     ("export-podcast-edit", "write"),
     ("validate-render", "plan"),
@@ -71,6 +74,7 @@ def run_agent(
     operation = request["operation"]
     handlers = {
         "manifest": _manifest,
+        "collections": _collections,
         "models": _models,
         "status": _status,
         "ingest": _ingest,
@@ -78,6 +82,7 @@ def run_agent(
         "embed": _embed,
         "plan": _plan,
         "short-plan": _short_plan,
+        "short-batch-plan": _short_batch_plan,
         "validate-edl": _validate_edl,
         "export-podcast-edit": _export_edit,
         "validate-render": _validate_render,
@@ -171,6 +176,15 @@ def _manifest(request: dict, _progress) -> tuple[dict, list, list]:
                 "localByDefault": True,
             },
         },
+        [],
+        [],
+    )
+
+
+def _collections(request: dict, _progress) -> tuple[dict, list, list]:
+    _exact(request["input"], set(), "input")
+    return (
+        {"collections": [preset.model_dump(mode="json") for preset in list_collections()]},
         [],
         [],
     )
@@ -317,6 +331,50 @@ def _short_plan(request: dict, _progress) -> tuple[dict, list, list]:
     )
 
 
+def _short_batch_plan(request: dict, _progress) -> tuple[dict, list, list]:
+    _exact(
+        request["input"],
+        {"workdir", "collection", "angle", "prompt", "duration", "count", "output"},
+        "input",
+    )
+    try:
+        preset = get_collection(str(request["input"].get("collection", "startups")))
+        angle, prompt = preset.prompt_for(
+            request["input"].get("angle"), request["input"].get("prompt")
+        )
+        target = validate_short_duration(float(request["input"].get("duration", 45)))
+        count = int(request["input"].get("count", 5))
+        if not 3 <= count <= 5:
+            raise ValueError("count must be between 3 and 5")
+    except ValueError as exc:
+        raise AgentError("INVALID_INPUT", str(exc), path="input") from exc
+    cfg = load_config(_path(request["input"].get("workdir")), require_key=False)
+    if request["validateOnly"]:
+        counts: dict[str, int] = {}
+        if cfg.db_path.exists():
+            with Store(cfg.db_path) as store:
+                counts = store.counts()
+        return (
+            {
+                "ready": counts.get("embedded", 0) >= count,
+                "collection": preset.id,
+                "angle": angle,
+                "prompt": prompt,
+                "targetSeconds": target,
+                "count": count,
+                "counts": counts,
+            },
+            [],
+            [],
+        )
+    result, artifacts, warnings = _save_edls(
+        pipeline.make_short_batch(prompt, cfg, count=count, target=target),
+        request["input"].get("output"),
+    )
+    result.update({"collection": preset.id, "angle": angle, "prompt": prompt})
+    return result, artifacts, warnings
+
+
 def _save_edls(edls: list[EDL], output: Any) -> tuple[dict, list, list]:
     artifacts = []
     if output:
@@ -415,6 +473,7 @@ def _render(request: dict, progress) -> tuple[dict, list, list]:
             "sourceLabel",
             "watermark",
             "watermarkText",
+            "profile",
         },
         "input",
     )
@@ -423,6 +482,9 @@ def _render(request: dict, progress) -> tuple[dict, list, list]:
     if request["validateOnly"]:
         return ({"ready": True, "editId": payload["id"], "output": str(output)}, [], [])
     cfg = load_config(_path(request["input"].get("workdir")), require_key=False)
+    profile = str(request["input"].get("profile", "source"))
+    if profile not in {"source", "social"}:
+        raise AgentError("INVALID_INPUT", "profile must be source or social", path="input.profile")
     edl = EDL.model_validate(payload["editorial"])
     events: list[dict] = []
     render(
@@ -433,6 +495,7 @@ def _render(request: dict, progress) -> tuple[dict, list, list]:
         source_label=bool(request["input"].get("sourceLabel", True)),
         watermark=bool(request["input"].get("watermark", True)),
         watermark_text=request["input"].get("watermarkText", "MASHUP"),
+        profile=profile,
         workdir=cfg.workdir,
         progress=lambda message: _emit(progress, events, "render", message),
     )

@@ -354,6 +354,26 @@ class StubGateway:
         type(self).chat_json_calls += 1
         # The enrichment schema is an array; the brief parser's is an object.
         if schema_hint.lstrip().startswith("["):
+            if '"hook_strength"' in schema_hint:
+                ids = _ID_RE.findall(messages[-1]["content"])
+                windows = re.findall(
+                    r"EXACT WINDOW: (.*?)\nCONTEXT AFTER",
+                    messages[-1]["content"],
+                    re.DOTALL,
+                )
+                return [
+                    {
+                        "id": segment_id,
+                        "can_open": True,
+                        "can_end": True,
+                        "opening_quote": " ".join(window.split()[:4]),
+                        "ending_quote": " ".join(window.split()[-4:]),
+                        "hook_strength": 0.8,
+                        "payoff_strength": 0.8,
+                        "reason": "synthetic short opens cold and lands",
+                    }
+                    for segment_id, window in zip(ids, windows, strict=True)
+                ]
             if '"reason"' in schema_hint:
                 ids = _ID_RE.findall(messages[-1]["content"])
                 return [
@@ -577,6 +597,23 @@ def test_no_edl_repeats_a_segment(run: PipelineRun) -> None:
     for edl in run.edls:
         ids = [c.segment_id for c in edl.clips]
         assert len(ids) == len(set(ids)), f"{edl.strategy} reused a segment"
+
+
+def test_short_batch_produces_three_non_overlapping_source_windows(run: PipelineRun) -> None:
+    batch = pipeline.make_short_batch(
+        "a self-contained lesson about family decisions and travel",
+        run.cfg,
+        count=3,
+        target=30,
+    )
+
+    assert [edl.strategy for edl in batch] == ["short-01", "short-02", "short-03"]
+    clips = [edl.clips[0] for edl in batch]
+    for position, left in enumerate(clips):
+        for right in clips[position + 1 :]:
+            assert left.source_id != right.source_id or not (
+                left.start < right.end and right.start < left.end
+            )
 
 
 def test_every_edl_respects_the_duration_ceiling(run: PipelineRun) -> None:

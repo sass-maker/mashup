@@ -98,7 +98,11 @@ def parse_vtt(text: str) -> list[Cue]:
         parsed = _parse_block(lines)
         if parsed is not None:
             raw.append(parsed)
-    return _finalise(raw)
+    # YouTube auto-captions use a rolling two-line window: each cue repeats
+    # the previous line and adds the next one. Inline karaoke timestamps are a
+    # reliable marker for that format. Collapse only those files so ordinary
+    # VTT cues are never changed merely because adjacent speakers repeat text.
+    return _finalise(raw, dedupe_rolling=_INLINE_TIMESTAMP.search(text) is not None)
 
 
 def parse_timestamp_map(header: str) -> dict[str, str]:
@@ -194,12 +198,35 @@ def _looks_like_speaker(name: str) -> bool:
     return all(_NAME_WORD.match(word) for word in words)
 
 
-def _finalise(raw: list[tuple[float, float, str]]) -> list[Cue]:
+def _rolling_delta(text: str, previous: str) -> str:
+    """Return only words newly introduced by a rolling caption window."""
+    current_words = text.split()
+    previous_words = previous.split()
+    if not current_words or not previous_words:
+        return text
+    if current_words == previous_words:
+        return ""
+
+    # A rolling cue begins with the tail of the previous cue. This format also
+    # emits one-word finalisation windows, so a one-token overlap is meaningful;
+    # ordinary VTT never reaches this branch.
+    for width in range(min(len(current_words), len(previous_words)), 0, -1):
+        if previous_words[-width:] == current_words[:width]:
+            return " ".join(current_words[width:])
+    return text
+
+
+def _finalise(raw: list[tuple[float, float, str]], *, dedupe_rolling: bool = False) -> list[Cue]:
     """Clean text, drop empties, renumber. Indices must be dense because
     segments reference cue ranges by position."""
     cues: list[Cue] = []
+    previous_text = ""
     for start, end, body in raw:
         text, speaker = _clean(body)
+        if dedupe_rolling:
+            full_text = text
+            text = _rolling_delta(full_text, previous_text)
+            previous_text = full_text
         if not text:
             continue
         cues.append(Cue(index=len(cues), start=start, end=end, text=text, speaker=speaker))

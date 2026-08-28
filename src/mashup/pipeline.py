@@ -38,7 +38,13 @@ from mashup.segment.editorial import (
 )
 from mashup.segment.enrich import enrich_segments
 from mashup.segment.splitter import split_source
-from mashup.shorts import build_short_candidates, validate_short_duration
+from mashup.shorts import (
+    ShortPlanningError,
+    build_short_candidates,
+    review_short_candidates,
+    select_distinct_segments,
+    validate_short_duration,
+)
 from mashup.store import Store
 
 AI_STRATEGIES = ("chronological", "escalation", "callback")
@@ -409,9 +415,22 @@ def make_short(
             cues_by_source,
             target=target,
         )
+        chat = make_chat(
+            cfg,
+            gateway=Gateway(cfg) if cfg.chat_backend == "gateway" else None,
+        )
+        reviewed = review_short_candidates(
+            candidates,
+            cues_by_source,
+            chat,
+            cfg.cache_dir,
+        )
+        if not reviewed:
+            raise ShortPlanningError("no short window cleared the opening and payoff review")
+        chosen = reviewed[0]
         result = plan(
             "escalation",
-            candidates,
+            [chosen.candidate],
             session.ctx,
             session.retriever.pairwise,
             max_clips=1,
@@ -431,12 +450,93 @@ def make_short(
         return edl.model_copy(
             update={
                 "strategy": "short",
+                "short_review": chosen.review,
                 "rationale": [
                     "short-form: one contiguous cue-level source window",
+                    f"short editorial: hook {chosen.review.hook_strength:.2f}, "
+                    f"payoff {chosen.review.payoff_strength:.2f}",
+                    chosen.review.reason,
                     *edl.rationale,
                 ],
             }
         )
+
+
+def make_short_batch(
+    prompt: str,
+    cfg: Config,
+    *,
+    count: int = 5,
+    target: float = 45.0,
+    pool: int = DEFAULT_POOL,
+) -> list[EDL]:
+    """Select a ranked batch of complete, pairwise non-overlapping short cuts."""
+    validate_short_duration(target)
+    if not 3 <= count <= 5:
+        raise ValueError("short batch count must be between 3 and 5")
+    with planning_session(prompt, cfg, target=target, pool=pool, editorial=False) as session:
+        cues_by_source = {
+            source.id: session.store.get_cues(source.id) for source in session.store.get_sources()
+        }
+        candidates = build_short_candidates(
+            session.candidates,
+            cues_by_source,
+            target=target,
+        )
+        chat = make_chat(
+            cfg,
+            gateway=Gateway(cfg) if cfg.chat_backend == "gateway" else None,
+        )
+        reviewed = review_short_candidates(
+            candidates,
+            cues_by_source,
+            chat,
+            cfg.cache_dir,
+        )
+        selected_segments = select_distinct_segments(
+            [item.candidate.segment for item in reviewed],
+            count=count,
+        )
+        selected_ids = {segment.id for segment in selected_segments}
+        selected_reviews = [item for item in reviewed if item.candidate.segment.id in selected_ids][
+            :count
+        ]
+
+        edls: list[EDL] = []
+        for index, reviewed_short in enumerate(selected_reviews, start=1):
+            result = plan(
+                "escalation",
+                [reviewed_short.candidate],
+                session.ctx,
+                session.retriever.pairwise,
+                max_clips=1,
+            )
+            edl = result_to_edl(
+                result,
+                session.request,
+                cfg,
+                session.store,
+                target=target,
+                snap=False,
+                crossfade=0.0,
+                calibration=session.ctx.calibration,
+            )
+            edls.append(
+                edl.model_copy(
+                    update={
+                        "strategy": f"short-{index:02d}",
+                        "short_review": reviewed_short.review,
+                        "rationale": [
+                            f"short batch: candidate {index} of {count}, distinct source window",
+                            f"short editorial: hook {reviewed_short.review.hook_strength:.2f}, "
+                            f"payoff {reviewed_short.review.payoff_strength:.2f}",
+                            reviewed_short.review.reason,
+                            *edl.rationale,
+                        ],
+                    }
+                )
+            )
+        return edls
 
 
 # The two orders compared when sequencing is tested on its own.

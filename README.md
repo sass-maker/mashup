@@ -19,6 +19,12 @@ still requires an approved editorial contract, and every generated media
 receipt links back to the normalized operation identity. Mashup produces media
 but never chooses or writes to a publishing channel.
 
+The public website screens approved finished results and their provenance. It
+is intentionally static: uploads, archives, rendering, approvals, and posting
+remain local operator responsibilities.
+
+Public proof: <https://mashup-a6h.pages.dev>
+
 ## The thesis
 
 The bet is that **ordering is the hard part**. Semantic search over an archive
@@ -193,6 +199,8 @@ mashup build --prompt "..." --no-snap                    # cut exactly on segmen
 
 mashup short --prompt "..." --duration 45 --output output/short.mp4
 mashup short --prompt "..." --visuals visuals.json --watermark-text MY_SHOW
+mashup collections
+mashup short-batch --collection startups --angle product-market-fit --count 5
 
 mashup preview output/escalation.json      # transcript with source timecodes
 mashup render output/escalation.json --output final.mp4 --subtitles sidecar
@@ -229,6 +237,46 @@ plays existing source-video frames from `source_time`; image files remain held.
 The renderer keeps the spoken-source heading and watermark visible and adds a
 separate on-screen archival visual credit. Visual source paths resolve from the
 current working directory and are persisted as absolute paths in the EDL.
+
+### The Startups clipping desk
+
+`mashup short-batch` is the first category-led operator workflow. It reuses one
+already-ingested archive and prepares three to five complete, pairwise
+non-overlapping social candidates for one checked-in angle:
+
+```bash
+mashup collections
+mashup short-batch \
+  --collection startups \
+  --angle fundraising \
+  --count 5 \
+  --duration 45 \
+  --output output/startups-fundraising
+```
+
+The Startups preset currently includes `product-market-fit`, `fundraising`,
+`distribution`, `hiring`, `founder-failure`, `moats`, and
+`contrarian-lessons`. Use `--prompt` for a free-form angle without changing the
+collection identity or watermark.
+
+Rendered batches use the explicit `social` profile: 1080×1920 H.264, full-frame
+source fitting rather than face-blind cropping, burned captions, a source
+heading, and the `STARTUPS` watermark. Each output directory contains
+`clip-01...clip-05` EDL/video/caption artifacts, `batch.json`, and a standalone
+`index.html` review desk. Shortlist/pass state stays in that browser's local
+storage; Mashup still never publishes.
+
+Plan without rendering when validating a corpus or when the local FFmpeg build
+does not have libass:
+
+```bash
+mashup short-batch --collection startups --angle distribution --no-render
+mashup render clip-01.json --output clip-01.mp4 --profile social --subtitles burn
+```
+
+The agent equivalent is `short-batch-plan`. Start with `validateOnly: true`;
+the agent operation plans EDLs but does not bypass the existing approval gate
+to render them.
 
 ### The transcript editor
 

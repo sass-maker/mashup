@@ -32,8 +32,10 @@ from mashup.render.provenance import (
 )
 
 Progress = Callable[[str], None]
+RenderProfile = Literal["source", "social"]
 
 DEFAULT_SIZE = (1280, 720)
+SOCIAL_SIZE = (1080, 1920)
 DEFAULT_FPS = 30.0
 # Neutral card behind audio-only clips: dark enough not to flash between video
 # clips, not pure black so the render reads as intentional.
@@ -123,7 +125,11 @@ def probe(path: Path) -> MediaInfo:
     )
 
 
-def _target_format(edl: EDL, infos: dict[str, MediaInfo]) -> tuple[tuple[int, int], float]:
+def _target_format(
+    edl: EDL,
+    infos: dict[str, MediaInfo],
+    profile: RenderProfile = "source",
+) -> tuple[tuple[int, int], float]:
     """Choose the modal source format, preferring maximum quality on a tie."""
     formats: Counter[tuple[int, int, float]] = Counter()
     seen_sources: set[str] = set()
@@ -138,6 +144,13 @@ def _target_format(edl: EDL, infos: dict[str, MediaInfo]) -> tuple[tuple[int, in
             height = info.height - info.height % 2
             formats[(width, height, round(info.fps, 3))] += 1
 
+    if profile == "social":
+        fps = (
+            max(formats, key=lambda format_: (formats[format_], format_[2]))[2]
+            if formats
+            else DEFAULT_FPS
+        )
+        return SOCIAL_SIZE, fps
     if formats:
         width, height, fps = max(
             formats,
@@ -161,6 +174,7 @@ def _clip_key(
     source_label: bool,
     watermark: bool,
     watermark_text: str,
+    profile: RenderProfile,
 ) -> str:
     """Identity of a rendered intermediate: the clip fields that affect pixels.
 
@@ -206,6 +220,7 @@ def _clip_key(
             round(clip.end, 4) if source_label else "",
             watermark,
             watermark_text if watermark else "",
+            profile,
             *visual_identity,
         )
     )
@@ -308,7 +323,8 @@ def _extract_cmd(
             cmd += ["-loop", "1", "-framerate", f"{fps:g}", "-i", str(label)]
             label_map = f"{next_input}:v:0"
             next_input += 1
-            graph.append(f"[{current}][{label_map}]overlay=x={margin}:y=H-h-{margin}[labeled]")
+            label_y = str(margin) if height > width else f"H-h-{margin}"
+            graph.append(f"[{current}][{label_map}]overlay=x={margin}:y={label_y}[labeled]")
             current = "labeled"
         if watermark is not None:
             cmd += ["-loop", "1", "-framerate", f"{fps:g}", "-i", str(watermark)]
@@ -341,13 +357,30 @@ def _concat_entry(path: Path) -> str:
     return f"file '{quoted}'\n"
 
 
-def _concat_cmd(parts: Sequence[Path], dst: Path, burn: Path | None, listfile: Path) -> list[str]:
+def _subtitle_filter(burn: Path, profile: RenderProfile) -> str:
+    base = f"subtitles=filename={burn.name}"
+    if profile != "social":
+        return base
+    style = (
+        "FontName=Arial,FontSize=10,PrimaryColour=&H00FFFFFF,"
+        "BackColour=&HA0000000,BorderStyle=3,Outline=1,Shadow=0,Alignment=2,MarginV=48"
+    )
+    return f"{base}:force_style='{style}'"
+
+
+def _concat_cmd(
+    parts: Sequence[Path],
+    dst: Path,
+    burn: Path | None,
+    listfile: Path,
+    profile: RenderProfile,
+) -> list[str]:
     listfile.write_text("".join(_concat_entry(p) for p in parts), encoding="utf-8")
     cmd = [ffmpeg_bin(), *_BASE]
     cmd += ["-fflags", "+genpts", "-f", "concat", "-safe", "0", "-i", str(listfile)]
     if burn is not None:
         # Burning touches pixels, so video has to be re-encoded; audio can ride through.
-        cmd += ["-filter:v", f"subtitles=filename={burn.name}"]
+        cmd += ["-filter:v", _subtitle_filter(burn, profile)]
         cmd += _flags(_VIDEO_ENC) + ["-c:a", "copy"]
     else:
         # Intermediates already share codecs/timebase, so this is a lossless join.
@@ -361,6 +394,7 @@ def _xfade_cmd(
     fade: float,
     dst: Path,
     burn: Path | None,
+    profile: RenderProfile,
 ) -> list[str]:
     cmd = [ffmpeg_bin(), *_BASE]
     for part in parts:
@@ -381,7 +415,7 @@ def _xfade_cmd(
         acc += durations[i] - fade
 
     if burn is not None:
-        graph.append(f"[{vlab}]subtitles=filename={burn.name}[vout]")
+        graph.append(f"[{vlab}]{_subtitle_filter(burn, profile)}[vout]")
         vlab = "vout"
 
     if graph:
@@ -450,6 +484,7 @@ def render(
     source_label: bool = True,
     watermark: bool = True,
     watermark_text: str = "MASHUP",
+    profile: RenderProfile = "source",
     workdir: Path,
     progress: Progress | None = None,
 ) -> Path:
@@ -461,6 +496,8 @@ def render(
     say: Progress = progress or (lambda _msg: None)
     if not edl.clips:
         raise ValueError("cannot render an EDL with no clips")
+    if profile not in {"source", "social"}:
+        raise ValueError(f"unsupported render profile: {profile}")
     # ffmpeg is invoked with cwd=workdir so the concat list can use relative
     # entries, which means a relative output path would resolve against the
     # workdir rather than the caller's directory. Pin it before anything runs.
@@ -490,14 +527,22 @@ def render(
     labels_dir = workdir / "source-labels"
 
     infos = {p: probe(Path(p)) for p in sorted({c.source_path for c in edl.clips})}
-    size, fps = _target_format(edl, infos)
+    size, fps = _target_format(edl, infos, profile)
     say(f"target {size[0]}x{size[1]}@{fps:g}, {len(edl.clips)} clips")
 
     parts: list[Path] = []
     for n, clip in enumerate(edl.clips, start=1):
-        dst = parts_dir / (
-            f"{_clip_key(clip, size, fps, normalise, source_label, watermark, watermark_text)}.mp4"
+        key = _clip_key(
+            clip,
+            size,
+            fps,
+            normalise,
+            source_label,
+            watermark,
+            watermark_text,
+            profile,
         )
+        dst = parts_dir / f"{key}.mp4"
         tag = f"[{n}/{len(edl.clips)}] {clip.source_id} {clip.render_start:.2f}s"
         if dst.exists() and dst.stat().st_size > 0:
             say(f"{tag} cached")
@@ -555,9 +600,9 @@ def render(
 
     say("concatenating" + (f" with {fade:.2f}s crossfades" if fade else ""))
     if fade:
-        cmd = _xfade_cmd(parts, durations, fade, out_path, burn_path)
+        cmd = _xfade_cmd(parts, durations, fade, out_path, burn_path, profile)
     else:
-        cmd = _concat_cmd(parts, out_path, burn_path, workdir / "concat.txt")
+        cmd = _concat_cmd(parts, out_path, burn_path, workdir / "concat.txt", profile)
     run_tool(cmd, cwd=workdir)
 
     # Crossfades overlap material, so the sum of clip durations overstates the

@@ -106,6 +106,39 @@ def test_vtt_notes_settings_and_voices(tmp_path: Path) -> None:
     assert cues[1].text == "Shouted words here."
 
 
+YOUTUBE_ROLLING_VTT = """\
+WEBVTT
+Kind: captions
+
+00:00:01.000 --> 00:00:03.000 align:start position:0%
+Welcome<00:00:01.200><c> to</c><00:00:01.400><c> the</c><00:00:01.600><c> show.</c>
+
+00:00:03.000 --> 00:00:03.010 align:start position:0%
+Welcome to the show.
+
+00:00:03.010 --> 00:00:05.000 align:start position:0%
+Welcome to the show.
+Thanks<00:00:03.200><c> for</c><00:00:03.400><c> having</c><00:00:03.600><c> me.</c>
+
+00:00:05.000 --> 00:00:05.010 align:start position:0%
+Thanks for having me.
+
+00:00:05.010 --> 00:00:07.000 align:start position:0%
+Thanks for having me.
+Let's<00:00:05.200><c> begin.</c>
+"""
+
+
+def test_youtube_rolling_vtt_emits_each_phrase_once(tmp_path: Path) -> None:
+    cues = parse_subtitles(write(tmp_path, "youtube.vtt", YOUTUBE_ROLLING_VTT))
+    assert [cue.text for cue in cues] == [
+        "Welcome to the show.",
+        "Thanks for having me.",
+        "Let's begin.",
+    ]
+    assert [cue.index for cue in cues] == [0, 1, 2]
+
+
 def test_vtt_timestamp_map_parses_but_does_not_offset(tmp_path: Path) -> None:
     fields = parse_timestamp_map("WEBVTT\nX-TIMESTAMP-MAP=LOCAL:00:00:00.000,MPEGTS:900000")
     assert fields["MPEGTS"] == "900000"

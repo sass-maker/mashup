@@ -269,15 +269,7 @@ export default function Timeline() {
   const total = useMemo(() => (doc ? totalDuration(doc.clips) : 0), [doc]);
 
   if (fatal) {
-    return (
-      <div className="fatal" role="alert">
-        <h2>Could not load the EDL</h2>
-        <p>{fatal}</p>
-        <p className="dim">
-          Start the backend with <code>mashup serve output/chronological.json</code>, then reload.
-        </p>
-      </div>
-    );
+    return <OfflineEditor detail={fatal} />;
   }
 
   if (!doc) return <p className="loading">loading…</p>;
@@ -364,5 +356,86 @@ export default function Timeline() {
         <span><kbd>Esc</kbd> close panel</span>
       </footer>
     </div>
+  );
+}
+
+function OfflineEditor({ detail }: { detail: string }) {
+  const previewClips = [
+    {
+      index: '01',
+      role: 'setup',
+      source: 'SOURCE 01 · 00:04:18–00:04:42',
+      text: 'Open on the moment that names the topic and gives the compilation a reason to exist.',
+      evidence: ['provenance linked', 'topic 0.91', 'opening 0.84'],
+    },
+    {
+      index: '02',
+      role: 'development',
+      source: 'SOURCE 03 · 00:17:06–00:17:39',
+      text: 'Build the idea with a distinct source beat, preserving enough context for the cut to feel authored rather than retrieved.',
+      evidence: ['transcript linked', 'coherence 0.88', 'novelty 0.76'],
+    },
+    {
+      index: '03',
+      role: 'closer',
+      source: 'SOURCE 02 · 00:31:12–00:31:29',
+      text: 'Finish on a clean ending that resolves the topic without synthetic speech or an invented conclusion.',
+      evidence: ['rights approved', 'closure 0.93', 'energy 0.81'],
+    },
+  ];
+
+  return (
+    <section className="editor offline-editor" aria-labelledby="offline-editor-title">
+      <header className="offline-editor-head">
+        <div>
+          <p className="mono offline-label">Illustrative editor structure</p>
+          <h2 id="offline-editor-title">The local EDL is not connected.</h2>
+          <p>
+            Mashup does not upload a placeholder archive. Start the loopback backend with an
+            approved EDL to review real source clips, scores, and provenance here.
+          </p>
+        </div>
+        <span className="pill pill-warn">backend offline</span>
+      </header>
+
+      <div className="offline-command">
+        <span>Start a local review</span>
+        <code>mashup serve output/chronological.json</code>
+      </div>
+
+      <div className="toolbar offline-toolbar" aria-hidden="true">
+        <div className="toolbar-left">
+          <span className="pill">01:42 / 02:00 <em>−00:18</em></span>
+          <span className="drift-note">illustrative values only</span>
+        </div>
+        <div className="toolbar-right">
+          <button type="button" className="btn" disabled>↶ undo</button>
+          <button type="button" className="btn btn-primary" disabled>⤓ export JSON</button>
+        </div>
+      </div>
+
+      <ol className="timeline offline-timeline" aria-label="Illustrative inspectable edit">
+        {previewClips.map((clip) => (
+          <li key={clip.index} className="card">
+            <div className="card-rail"><span className="card-index">{clip.index}</span></div>
+            <div className="card-body">
+              <div className="card-head">
+                <span className={`badge role-${clip.role}`}>{clip.role}</span>
+                <span className="source mono">{clip.source}</span>
+              </div>
+              <p className="card-text">{clip.text}</p>
+              <div className="card-foot">
+                {clip.evidence.map((item) => <span key={item} className="tag">{item}</span>)}
+              </div>
+            </div>
+          </li>
+        ))}
+      </ol>
+
+      <details className="offline-detail">
+        <summary>Connection detail</summary>
+        <p>{detail}</p>
+      </details>
+    </section>
   );
 }

@@ -7,6 +7,7 @@ import pytest
 
 from mashup.agent import AGENT_SCHEMA, AgentError, run_agent
 from mashup.media_receipt import build_media_receipt, validate_media_receipt
+from mashup.store import Store
 
 
 def request(operation: str, input_: dict | None = None, **extra) -> dict:
@@ -26,6 +27,7 @@ def test_manifest_exposes_every_supported_operation() -> None:
     assert result["state"] == "completed"
     assert {item["id"] for item in result["result"]["operations"]} == {
         "manifest",
+        "collections",
         "models",
         "status",
         "ingest",
@@ -33,6 +35,7 @@ def test_manifest_exposes_every_supported_operation() -> None:
         "embed",
         "plan",
         "short-plan",
+        "short-batch-plan",
         "validate-edl",
         "export-podcast-edit",
         "validate-render",
@@ -41,6 +44,45 @@ def test_manifest_exposes_every_supported_operation() -> None:
         "inspect-receipt",
     }
     assert result["result"]["safety"]["arbitraryExecution"] is False
+
+
+def test_collections_and_short_batch_validate_without_running_models(tmp_path: Path) -> None:
+    collections = run_agent(request("collections"))
+    validated = run_agent(
+        request(
+            "short-batch-plan",
+            {
+                "workdir": str(tmp_path),
+                "collection": "startups",
+                "angle": "fundraising",
+                "count": 3,
+            },
+            validateOnly=True,
+        )
+    )
+
+    assert collections["result"]["collections"][0]["id"] == "startups"
+    assert validated["state"] == "validated"
+    assert validated["result"]["ready"] is False
+    assert validated["result"]["count"] == 3
+    assert validated["result"]["counts"] == {}
+
+    with Store(tmp_path / "mashup.db"):
+        pass
+    empty_store = run_agent(
+        request(
+            "short-batch-plan",
+            {
+                "workdir": str(tmp_path),
+                "collection": "startups",
+                "angle": "fundraising",
+                "count": 3,
+            },
+            validateOnly=True,
+        )
+    )
+    assert empty_store["result"]["ready"] is False
+    assert empty_store["result"]["counts"]["embedded"] == 0
 
 
 def test_status_is_safe_before_a_store_exists(tmp_path: Path) -> None:

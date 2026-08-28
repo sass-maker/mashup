@@ -151,6 +151,18 @@ class ScoreTerms(BaseModel):
         return sum(getattr(self, k) * w for k, w in weights.items())
 
 
+class ShortReview(BaseModel):
+    """Editorial evidence for one exact short-form source window."""
+
+    can_open: bool = False
+    can_end: bool = False
+    opening_quote: str = ""
+    ending_quote: str = ""
+    hook_strength: float = Field(default=0.0, ge=0.0, le=1.0)
+    payoff_strength: float = Field(default=0.0, ge=0.0, le=1.0)
+    reason: str = ""
+
+
 class VisualInsert(BaseModel):
     """One provenance-backed still shown over a clip's existing audio."""
 
@@ -227,6 +239,8 @@ class EDL(BaseModel):
     calibration: dict[str, float | str] = Field(default_factory=dict)
     # Human-readable reasons the planner made the choices it made.
     rationale: list[str] = Field(default_factory=list)
+    # Exact-window short-form review. Long-form and legacy EDLs leave this empty.
+    short_review: ShortReview | None = None
 
     @property
     def duration(self) -> float:

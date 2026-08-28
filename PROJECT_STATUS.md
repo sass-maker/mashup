@@ -1,6 +1,6 @@
 # Mashup — Project Status
 
-Last updated: 2026-08-20
+Last updated: 2026-08-28
 
 ## Why / What
 
@@ -24,6 +24,13 @@ approval, provenance, and multi-clip rendering.
 
 ## Timeline
 
+- **2026-08-28:** released the first public proof surface around the strongest
+  Startups result: a source-faithful 47-second argument assembled from four
+  beats across three Creative Commons podcast episodes, with a compact
+  13-second comparison, browser captions, and inspectable media receipts.
+- **2026-08-27:** added the bounded Startups clipping desk pilot: checked-in
+  category angles, distinct 3–5 short batches, an explicit 1080×1920 render
+  profile, static local review, and strict agent-side batch planning.
 - **2026-08-20:** restored the standalone repository as Mashup's canonical
   source, preserving the complete local-first runtime and making the finished
   media receipt the only Fleet/Reel integration boundary.
@@ -36,6 +43,9 @@ approval, provenance, and multi-clip rendering.
 ## Products
 
 - Local Mashup CLI and loopback editorial interface.
+- Static [public proof site](https://mashup-a6h.pages.dev) for approved finished
+  media; it does not host the archive, editor, rendering pipeline, accounts,
+  uploads, or publishing.
 
 ## Features (shipped)
 
@@ -46,7 +56,11 @@ approval, provenance, and multi-clip rendering.
 - Versioned finished-media receipts for decoupled downstream consumption.
 - Machine-readable agent manifest and operations with strict input decoding,
   stable errors, structured progress, approval gates, and no arbitrary code.
+- Category-led Startups presets, non-overlapping short batches, vertical social
+  rendering, and a standalone browser review manifest with local review state.
+- Public proof showcase with responsive source screening, an argument map,
+  independent score evidence, episode attribution, captions, and media receipts.
 
 ## Work queue
 
-Open work is tracked in [GitHub Issues](https://github.com/sarthakagrawal927/mashup/issues).
+Open work is tracked in [GitHub Issues](https://github.com/sass-maker/mashup/issues).

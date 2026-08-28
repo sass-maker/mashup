@@ -30,6 +30,9 @@ replacement speech.
 The product is a local Python CLI plus a loopback-only Astro/React editor.
 Transcription, enrichment, embeddings, planning, and rendering are resumable.
 The operator works with local media and reviews generated MP4 and EDL outputs.
+A static public proof surface may screen approved finished media and its
+provenance; it does not accept uploads, host archives, render, or publish on the
+operator's behalf.
 
 ## Capabilities and Constraints
 
@@ -46,6 +49,8 @@ The operator works with local media and reviews generated MP4 and EDL outputs.
 ## Brand Commitments
 
 - Source heading and watermark remain persistent in rendered video.
+- The Startups operator pilot uses the `STARTUPS` watermark, a 1080×1920
+  source-fit social profile, and manual review/posting.
 - The active ZEROPOD pilot uses the `ZEROPOD` watermark.
 - Kinetic Type is the selected non-photoreal direction when an operator
   explicitly requests a visual layer for source speech. Cel Orbit and ASCII
@@ -56,6 +61,9 @@ The operator works with local media and reviews generated MP4 and EDL outputs.
 
 ## Evidence on Hand
 
+- Public Startups proof: a 47-second, four-beat synthesis across three
+  Creative Commons episodes, plus a compact 13-second comparison cut. Both
+  carry finished-media receipts and browser captions.
 - Long-form premium pilot:
   `output/zeropod-editorial-final/escalation-premium.mp4`.
 - Short-form EDL and audio proof:
