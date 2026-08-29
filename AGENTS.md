@@ -37,6 +37,9 @@ cd web && pnpm install && pnpm check && pnpm build
   not import Reel Pipeline modules, read its state, or depend on its paths.
 - Only creator-owned, appropriately licensed, or public-domain filmed and
   photographic media may enter an edit. Preserve provenance.
+- Podcast feed acquisition (`mashup feed`, `mashup fetch-episode`) enforces
+  that at the point of download: an unrecognised or `-nd` licence refuses,
+  and `--i-have-rights` is recorded when a creator overrides it.
 - Procedural non-photoreal motion, typography, diagrams, shaders, and ASCII are
   allowed. Synthetic speech, voice cloning, and deceptive photoreal footage
   are not.

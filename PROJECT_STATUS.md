@@ -1,6 +1,6 @@
 # Mashup — Project Status
 
-Last updated: 2026-08-28
+Last updated: 2026-08-30
 
 ## Why / What
 
@@ -24,6 +24,11 @@ approval, provenance, and multi-clip rendering.
 
 ## Timeline
 
+- **2026-08-30:** added the podcast RSS front door — feed resolution with
+  pagination, episode listing and selection, and a licence-gated, hash-validated
+  episode cache with acquisition records. The TTS half of the same issue is
+  deliberately not built; the synthetic-speech boundary is unchanged and remains
+  an owner decision.
 - **2026-08-28:** released the first public proof surface around the strongest
   Startups result: a source-faithful 47-second argument assembled from four
   beats across three Creative Commons podcast episodes, with a compact
@@ -49,6 +54,9 @@ approval, provenance, and multi-clip rendering.
 
 ## Features (shipped)
 
+- Podcast RSS acquisition: feed resolution and pagination, episode listing and
+  selection, a fail-closed rights gate, and an idempotent, resumable episode
+  cache with `fleet.mashup-episode-acquisition.v1` records.
 - Resumable archive ingestion, transcription, enrichment, embedding, boundary
   review, planning, approval, and multi-clip rendering.
 - Strict `fleet.podcast-edit.v1` editorial contract.

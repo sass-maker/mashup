@@ -23,6 +23,10 @@ sequencing actually beats retrieve-and-join.
   from the corpus instead of hard-coding them, why the callback strategy needs
   its own candidate pool, and what diffing a weak model against a strong one
   revealed about the enrichment prompt.
+- [decisions-acquisition.md](decisions-acquisition.md) — three entries on the
+  podcast RSS front door: why feed parsing takes a dependency, why the rights
+  gate fails closed on a feed that publishes no licence, and how the episode
+  cache is keyed and validated.
 - [experiment.md](experiment.md) — how to run the five-condition blind
   comparison: the coverage gate, the withheld key, the rating sheet, the
   success criteria and the kill criterion with their real thresholds, and how

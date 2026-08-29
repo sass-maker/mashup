@@ -16,6 +16,7 @@ from mashup.agent import read_agent_request, run_agent
 from mashup.batch import build_batch, save_batch, save_review_html
 from mashup.collections import get_collection, list_collections
 from mashup.config import ConfigError, load_config
+from mashup.feed import acquire as feed_acquire
 from mashup.media_receipt import build_media_receipt, save_media_receipt
 from mashup.models import EDL
 from mashup.ordertest import DEFAULT_SHUFFLES
@@ -134,6 +135,186 @@ def agent_cmd(
     except Exception as exc:  # protocol boundary normalizes every failure
         print(json.dumps(agent_failure(raw, exc), sort_keys=True, separators=(",", ":")))
         raise typer.Exit(1) from exc
+
+
+@app.command(name="feed")
+def feed_cmd(
+    url: Annotated[str, typer.Option("--url", "-u", help="Podcast RSS feed URL")],
+    limit: Annotated[int, typer.Option("--limit", "-n", help="Episodes to show")] = 20,
+    pages: Annotated[
+        int, typer.Option("--pages", help="Max paginated feed documents to follow")
+    ] = feed_acquire.DEFAULT_MAX_PAGES,
+) -> None:
+    """List the episodes in a podcast RSS feed.
+
+    Nothing is downloaded. Pick a row and pass its GUID to `mashup
+    fetch-episode`; the number is only stable while the feed is.
+    """
+    feed = _resolve_feed(url, pages)
+    heading = f"[bold]{feed.title}[/bold]  {len(feed.episodes)} episodes"
+    if feed.pages > 1:
+        heading += f" across {feed.pages} pages"
+    console.print(heading)
+
+    try:
+        console.print(f"  [dim]licence {feed_acquire.check_rights(feed)}[/dim]")
+    except feed_acquire.RightsError as exc:
+        _notice(f"{exc}")
+
+    table = Table(box=None)
+    table.add_column("#", justify="right")
+    table.add_column("published")
+    table.add_column("length", justify="right")
+    table.add_column("title")
+    table.add_column("guid")
+    for number, episode in enumerate(feed.episodes[:limit], start=1):
+        table.add_row(
+            str(number),
+            (episode.published or "")[:10] or "—",
+            _clock(episode.duration),
+            episode.title[:60],
+            episode.guid[:40] + ("…" if len(episode.guid) > 40 else ""),
+        )
+    console.print(table)
+    if len(feed.episodes) > limit:
+        console.print(f"  [dim]…{len(feed.episodes) - limit} more; raise --limit[/dim]")
+    _report_feed_problems(feed)
+
+
+@app.command(name="fetch-episode")
+def fetch_episode_cmd(
+    url: Annotated[str, typer.Option("--url", "-u", help="Podcast RSS feed URL")],
+    guid: Annotated[
+        str | None, typer.Option("--guid", help="Episode GUID, as shown by `mashup feed`")
+    ] = None,
+    index: Annotated[
+        int | None, typer.Option("--index", help="Episode number from `mashup feed` instead")
+    ] = None,
+    workdir: WORKDIR_OPT = None,
+    pages: Annotated[
+        int, typer.Option("--pages", help="Max paginated feed documents to follow")
+    ] = feed_acquire.DEFAULT_MAX_PAGES,
+    i_have_rights: Annotated[
+        bool,
+        typer.Option(
+            "--i-have-rights",
+            help="Skip the licence gate; for a feed you own or have cleared",
+        ),
+    ] = False,
+) -> None:
+    """Cache one episode's audio in the workdir, with an acquisition record.
+
+    Re-running is free: a cached file whose hash still matches its record is
+    not downloaded again. The audio lands under the workdir cache so
+    `mashup ingest --input <that directory>` transcribes it through the
+    existing path.
+    """
+    if (guid is None) == (index is None):
+        err.print("[red]pass exactly one of --guid or --index[/red]")
+        raise typer.Exit(2)
+
+    cfg = _config(workdir, require_key=False)
+    cfg.ensure_dirs()
+    feed = _resolve_feed(url, pages)
+    _report_feed_problems(feed)
+
+    if guid is not None:
+        episode = feed.find(guid)
+        if episode is None:
+            err.print(f"[red]no episode with guid {guid!r} in {feed.url}[/red]")
+            raise typer.Exit(2)
+    else:
+        if not 1 <= index <= len(feed.episodes):
+            err.print(f"[red]--index must be between 1 and {len(feed.episodes)}[/red]")
+            raise typer.Exit(2)
+        episode = feed.episodes[index - 1]
+
+    try:
+        license_url = feed_acquire.check_rights(feed, override=i_have_rights)
+    except feed_acquire.RightsError as exc:
+        err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+
+    if episode.guid_is_borrowed:
+        _notice(
+            f"{episode.title!r} publishes no <guid>; the cache key borrows its "
+            f"{episode.guid_source} and will change if the publisher moves the file."
+        )
+
+    try:
+        got = feed_acquire.acquire_episode(
+            feed,
+            episode,
+            cache_dir=cfg.cache_dir,
+            fetcher=_fetcher(),
+            license_url=license_url,
+            rights_override=i_have_rights,
+        )
+    except feed_acquire.AcquireError as exc:
+        err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+
+    state = "cached" if got.cached else "downloaded"
+    console.print(f"[bold]{episode.title}[/bold]  [dim]{state}[/dim]")
+    # Printed as lines rather than a table: a cache path is long, and rich
+    # truncates a table cell that will not fit.
+    console.print(f"  {got.audio_path}")
+    console.print(f"  [dim]{got.size_bytes} bytes  sha256 {got.sha256}[/dim]")
+    console.print(f"[green]{got.record_path}[/green]")
+    if got.audio_path.suffix not in feed_acquire.INGESTABLE_SUFFIXES:
+        _notice(
+            f"{got.audio_path.suffix} is not one of the extensions `mashup ingest` "
+            "reads; convert it before ingesting."
+        )
+    else:
+        console.print(f"  [dim]next: mashup ingest --input {got.audio_path.parent}[/dim]")
+
+
+def _fetcher():
+    """Split out so tests can substitute a fetcher without a live feed."""
+    return feed_acquire.HttpFetcher()
+
+
+def _resolve_feed(url: str, pages: int):
+    """Fetch and parse a feed, mapping its failures onto the CLI exit codes."""
+    import httpx
+
+    from mashup.feed.parse import FeedError
+
+    if pages < 1:
+        err.print("[red]--pages must be at least 1[/red]")
+        raise typer.Exit(2)
+    try:
+        fetcher = _fetcher()
+        try:
+            return feed_acquire.resolve_feed(url, fetcher=fetcher, max_pages=pages)
+        finally:
+            close = getattr(fetcher, "close", None)
+            if close is not None:
+                close()
+    except FeedError as exc:
+        err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    except (httpx.HTTPError, feed_acquire.AcquireError, OSError) as exc:
+        err.print(f"[red]{url}: {exc}[/red]")
+        raise typer.Exit(1) from exc
+
+
+def _report_feed_problems(feed) -> None:
+    """Dropped entries are shown, never swallowed — a short list is a claim."""
+    if feed.parse_warning:
+        _notice(f"feed is not well-formed XML ({feed.parse_warning}); parsed what was readable")
+    for drop in feed.dropped:
+        _notice(f"skipped entry {drop.index + 1} ({drop.title[:50]}): {drop.reason}")
+
+
+def _clock(seconds: float | None) -> str:
+    if not seconds:
+        return "—"
+    total = int(seconds)
+    hours, rest = divmod(total, 3600)
+    minutes, secs = divmod(rest, 60)
+    return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}"
 
 
 @app.command()

@@ -177,6 +177,44 @@ mashup --input ./archive --prompt "seven minutes on airline travel" --duration 4
 That writes `output/chronological.{json,mp4}`, `output/escalation.{json,mp4}`
 and `output/callback.{json,mp4}`.
 
+### From a podcast RSS feed
+
+`ingest` reads a directory. `feed` and `fetch-episode` are how a pasted
+podcast RSS URL becomes one.
+
+```bash
+mashup feed --url https://example.org/podcast/rss            # list episodes; downloads nothing
+mashup feed --url https://example.org/podcast/rss --limit 50
+mashup fetch-episode --url https://example.org/podcast/rss --guid <guid>
+mashup fetch-episode --url https://example.org/podcast/rss --index 3
+mashup fetch-episode --url ... --guid <guid> --i-have-rights   # a feed you own or have cleared
+```
+
+`fetch-episode` writes the audio and an `acquisition.json` under
+`.mashup/cache/episodes/<title>-<key>/`, then tells you the `mashup ingest`
+command that picks it up. The record carries the feed URL, the episode GUID
+and which fallback produced it, the declared *and* post-redirect enclosure
+URLs, the licence, the fetch timestamp, and a SHA-256 of the bytes on disk.
+
+Re-running is free: a cached file whose hash still matches its record is not
+downloaded again. An interrupted download resumes from its `.part` file.
+
+Rights fail closed, the same way [`scripts/fetch_archive.py`](scripts/fetch_archive.py)
+does: a feed with no machine-readable licence, or one whose licence forbids
+derivative works, refuses to download rather than fetching and asking later.
+`--i-have-rights` is the creator's own escape hatch and is recorded in the
+acquisition record when it is used.
+
+Feeds in the wild are messy, so `feed` reports what it could not use —
+entries with no enclosure, duplicate GUIDs, non-HTTP enclosure URLs — instead
+of quietly listing a shorter feed than the publisher wrote. Relative enclosure
+URLs resolve against the feed's post-redirect URL, `<itunes:duration>` is read
+in all three of its forms, and `rel="next"` pagination is followed up to
+`--pages` documents with a guard against a feed that links to itself.
+
+This stage stops at a downloaded file. Transcription is the existing
+WhisperKit/MLX path, unchanged, and nothing here synthesises audio.
+
 ### Stage by stage
 
 Every stage persists to the workdir and is independently resumable, which
@@ -318,6 +356,7 @@ detail in [`scripts/README.md`](scripts/README.md).
 ```
 .mashup/                  # workdir (MASHUP_WORKDIR)
   mashup.db               # sources, cues, segments, metadata, embeddings
+  cache/episodes/<ep>/    # audio.<ext> + acquisition.json from `mashup fetch-episode`
   cache/gateway/          # content-addressed LLM + embedding responses
   cache/silences-*.json   # per-file silence detection results
   subtitles/<source>.srt  # locally generated transcripts
@@ -331,6 +370,9 @@ output/
 ## How it works
 
 ```
+podcast RSS URL (optional front door)
+  -> feed        parse, list episodes, gate on licence
+  -> fetch       cached enclosure download + acquisition record
 archive (mp4/mp3 + srt/vtt)
   -> ingest      normalise cues, probe media, transcribe if needed
   -> split       cues -> pause-delimited atoms -> self-contained segments
@@ -353,7 +395,8 @@ clipping the first syllable of a punchline is the most audible failure this
 tool can produce.
 
 The reasoning behind each of those choices is in
-[`docs/decisions.md`](docs/decisions.md); the pipeline stages and risks are in
+[`docs/decisions.md`](docs/decisions.md) and, for feed acquisition,
+[`docs/decisions-acquisition.md`](docs/decisions-acquisition.md); the pipeline stages and risks are in
 [`openspec/changes/build-mashup-mvp/design.md`](openspec/changes/build-mashup-mvp/design.md).
 
 ## Non-goals
@@ -368,7 +411,8 @@ The reasoning behind each of those choices is in
 ## Development
 
 ```bash
-uv run pytest              # 162 tests; render smoke tests skip without ffmpeg
+uv run pytest              # 500 tests; render smoke tests skip without ffmpeg
+                           # nothing in the suite touches the network
 uv run ruff check .
 uv run ruff format --check .
 cd web && pnpm build       # the editor bundle
