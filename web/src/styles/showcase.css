@@ -316,7 +316,7 @@ main { overflow: hidden; }
   margin-top: 42px;
   padding: 22px 0 0;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 18px;
   border-top: 1px solid var(--rule-strong);
 }
@@ -325,6 +325,7 @@ main { overflow: hidden; }
 .score-ledger span, .score-ledger p { color: var(--ink-muted); font: 0.68rem/1.35 var(--measure); }
 .score-ledger strong { font: 700 1rem/1 var(--measure); }
 .score-ledger p { grid-column: 1 / -1; margin: 4px 0 0; }
+.score-ledger p a { color: var(--ink); font-weight: 700; }
 
 .comparison {
   padding: clamp(48px, 7vw, 88px);
@@ -441,7 +442,7 @@ main { overflow: hidden; }
   }
 
   .site-header { min-height: 66px; gap: 12px; }
-  .release-state { max-width: 17ch; font-size: 0.58rem; }
+  .release-state { max-width: 18ch; font-size: 0.65rem; }
   .hero { padding: 52px 0 78px; grid-template-columns: 1fr; }
   .hero h1 { max-width: 11ch; font-size: clamp(3rem, 16vw, 4.7rem); }
   .hero-summary { font-size: 1rem; }
@@ -465,6 +466,19 @@ main { overflow: hidden; }
   .compact-screen { width: min(100%, 370px); justify-self: center; }
   .source-row { grid-template-columns: 1fr; gap: 5px; }
   .source-header { display: none; }
+  .source-row > [role="cell"] {
+    display: grid;
+    grid-template-columns: minmax(90px, 0.42fr) minmax(0, 1fr);
+    gap: 12px;
+  }
+  .source-row > [role="cell"]::before {
+    content: attr(data-label);
+    color: var(--ink-muted);
+    font: 600 0.62rem/1.35 var(--measure);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .source-row > a[role="cell"] { justify-self: stretch; }
 
   .release-boundary {
     padding: 34px 24px;
