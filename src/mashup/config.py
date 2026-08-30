@@ -83,9 +83,7 @@ def load_config(workdir: Path | str | None = None, *, require_key: bool = False)
     backend = os.getenv("MASHUP_EMBED_BACKEND") or DEFAULT_EMBED_BACKEND
     chat_backend = os.getenv("MASHUP_CHAT_BACKEND") or _default_chat_backend()
     if require_key and not key:
-        raise ConfigError(
-            "No direct-provider key. Set MASHUP_AI_API_KEY."
-        )
+        raise ConfigError("No direct-provider key. Set MASHUP_AI_API_KEY.")
     wd = Path(workdir or os.getenv("MASHUP_WORKDIR") or ".mashup").expanduser().resolve()
     return Config(
         gateway_url=(os.getenv("MASHUP_AI_BASE_URL") or DEFAULT_GATEWAY_URL).rstrip("/"),
