@@ -1,7 +1,7 @@
 """Runtime configuration.
 
-Chat goes through the fleet free-ai gateway (OpenAI-compatible), so this
-project holds no provider keys of its own — only a gateway key.
+Remote chat uses an explicitly configured OpenAI-compatible free-provider
+endpoint. Local models remain the default on Apple silicon.
 
 Embeddings default to a local model instead. They are re-run constantly while
 tuning retrieval, they are the one stage where the gateway's provider
@@ -21,10 +21,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DEFAULT_GATEWAY_URL = "https://ai-gateway.sassmaker.com"
-# The gateway rejects `auto` for embeddings; it must be an explicit model.
+DEFAULT_GATEWAY_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
 DEFAULT_EMBED_MODEL = "gemini-embedding-001"
-DEFAULT_CHAT_MODEL = "auto"
+DEFAULT_CHAT_MODEL = "gemini-2.5-flash"
 DEFAULT_EMBED_BACKEND = "local"
 DEFAULT_LOCAL_EMBED_MODEL = "bge-base"
 DEFAULT_LOCAL_CHAT_MODEL = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
@@ -80,18 +79,16 @@ class Config:
 def load_config(workdir: Path | str | None = None, *, require_key: bool = False) -> Config:
     """Read the environment. `require_key` is for callers that know they need
     the gateway; most commands no longer do, so it defaults off."""
-    key = os.getenv("MASHUP_GATEWAY_API_KEY") or os.getenv("GATEWAY_API_KEY") or ""
+    key = os.getenv("MASHUP_AI_API_KEY") or ""
     backend = os.getenv("MASHUP_EMBED_BACKEND") or DEFAULT_EMBED_BACKEND
     chat_backend = os.getenv("MASHUP_CHAT_BACKEND") or _default_chat_backend()
     if require_key and not key:
         raise ConfigError(
-            "No gateway key. Set MASHUP_GATEWAY_API_KEY (or GATEWAY_API_KEY).\n"
-            "Fleet operators can pull it with:\n"
-            "  infisical run --projectId <free-ai> -- mashup ..."
+            "No direct-provider key. Set MASHUP_AI_API_KEY."
         )
     wd = Path(workdir or os.getenv("MASHUP_WORKDIR") or ".mashup").expanduser().resolve()
     return Config(
-        gateway_url=(os.getenv("MASHUP_GATEWAY_URL") or DEFAULT_GATEWAY_URL).rstrip("/"),
+        gateway_url=(os.getenv("MASHUP_AI_BASE_URL") or DEFAULT_GATEWAY_URL).rstrip("/"),
         gateway_api_key=key,
         project_id=os.getenv("MASHUP_PROJECT_ID") or "mashup",
         chat_model=os.getenv("MASHUP_CHAT_MODEL") or DEFAULT_CHAT_MODEL,

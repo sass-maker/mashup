@@ -305,8 +305,7 @@ class Gateway:
         than persisted. A cached response is validated too — an entry written
         before the rule existed must not be trusted forever.
         """
-        # The gateway requires the project on every /v1 call.
-        body = {**payload, "project_id": self.config.project_id}
+        body = dict(payload)
         key = _cache_key(path, str(body.get("model", "")), body)
         cached = self._cache_read(key)
         if cached is not None:

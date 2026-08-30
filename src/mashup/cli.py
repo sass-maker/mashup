@@ -88,7 +88,7 @@ def _runnable(
     if gateway_stages and not cfg.gateway_api_key:
         which = [f"MASHUP_{n.upper()}_BACKEND=gateway" for n in gateway_stages]
         err.print(
-            f"[red]{' and '.join(which)} needs MASHUP_GATEWAY_API_KEY.[/red]\n"
+            f"[red]{' and '.join(which)} needs MASHUP_AI_API_KEY.[/red]\n"
             "Unset it to run that stage locally instead."
         )
         raise typer.Exit(2)

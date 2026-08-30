@@ -47,7 +47,7 @@ def make_gateway(
     )
 
 
-def test_sends_bearer_token_and_project_id(tmp_path: Path) -> None:
+def test_sends_bearer_token_without_gateway_metadata(tmp_path: Path) -> None:
     seen: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -61,7 +61,7 @@ def test_sends_bearer_token_and_project_id(tmp_path: Path) -> None:
     assert request.url.path == "/v1/chat/completions"
     assert request.headers["Authorization"] == "Bearer key-123"
     body = json.loads(request.content)
-    assert body["project_id"] == "mashup-test"
+    assert "project_id" not in body
     assert body["model"] == "auto"
 
 

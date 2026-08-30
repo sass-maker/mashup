@@ -17,8 +17,8 @@ from mashup import config as config_module
 from mashup.config import Config, ConfigError, load_config
 
 MODEL_ENV = (
-    "MASHUP_GATEWAY_API_KEY",
-    "GATEWAY_API_KEY",
+    "MASHUP_AI_API_KEY",
+    "MASHUP_AI_BASE_URL",
     "MASHUP_CHAT_BACKEND",
     "MASHUP_EMBED_BACKEND",
     "MASHUP_LOCAL_CHAT_MODEL",
@@ -116,13 +116,13 @@ def test_loading_does_not_demand_a_key_by_default(clean_env) -> None:
 
 
 def test_require_key_still_works_for_callers_that_need_it(clean_env) -> None:
-    with pytest.raises(ConfigError, match="No gateway key"):
+    with pytest.raises(ConfigError, match="No direct-provider key"):
         load_config(require_key=True)
 
 
-def test_the_alias_env_var_is_accepted(clean_env) -> None:
-    clean_env.setenv("GATEWAY_API_KEY", "from-alias")
-    assert load_config(require_key=True).gateway_api_key == "from-alias"
+def test_the_direct_provider_env_var_is_accepted(clean_env) -> None:
+    clean_env.setenv("MASHUP_AI_API_KEY", "direct-key")
+    assert load_config(require_key=True).gateway_api_key == "direct-key"
 
 
 # ---- model selection -----------------------------------------------------
