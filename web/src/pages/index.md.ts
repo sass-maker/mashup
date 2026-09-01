@@ -30,6 +30,7 @@ export function GET() {
     '## Product boundaries',
     '',
     ...site.boundaries.map((item) => `- ${item}`),
+    '- Microsoft Clarity measures the public proof site only; the local archive, editor, render pipeline, and approvals are never part of session replay.',
     '',
     '## Canonical links',
     '',

@@ -121,6 +121,7 @@ const jsonLd = {
     <meta name="twitter:image" content={site.socialImage} />
     <script is:inline type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
     <title>{site.title}</title>
+    <script is:inline async src="https://www.clarity.ms/tag/y6bvgfkqwg"></script>
   </head>
   <body>
     <!--
@@ -274,7 +275,7 @@ const jsonLd = {
 
     <footer class="site-footer">
       <span>Mashup</span>
-      <p>Source-faithful edits from approved media. No generated voices. No opaque cuts.</p>
+      <p>Source-faithful edits from approved media. No generated voices. No opaque cuts. Microsoft Clarity measures this public proof site only.</p>
       <a href="https://github.com/sass-maker/mashup#the-transcript-editor" target="_blank" rel="noreferrer">Local editor guide <span aria-hidden="true">↗</span></a>
     </footer>
 
@@ -294,6 +295,6 @@ const jsonLd = {
       });
     </script>
     <script is:inline src="https://sassmaker.com/project-strip.js" data-project="mashup" defer></script>
-    <script is:inline src="https://sassmaker.com/ai-chat-footer.js" data-name="Mashup" data-compose="false" defer></script>
+    <script is:inline src="https://sassmaker.com/ai-chat-footer.js" data-name="Mashup" defer></script>
   </body>
 </html>
