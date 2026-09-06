@@ -408,6 +408,30 @@ The reasoning behind each of those choices is in
 - One content domain at a time. Comedy is the target; music, code, poetry and
   stories are explicitly not simultaneously supported.
 
+## Deferred experiments
+
+### Zero-API-cost RSS-to-personalized-podcast loop
+
+Validated as a concept but not built. The hypothesis: a user pastes one
+podcast RSS URL, Mashup resolves the feed and fetches an episode, then
+applies a differentiated transformation with retained user state — not
+commodity transcription or speech synthesis. "Zero API cost" means zero
+marginal API spend after source audio is fetched; local compute costs
+remain visible.
+
+Key decisions if resumed:
+- Reuse Mashup's existing WhisperKit/MLX Whisper path; no parallel STT stack.
+- Synthetic speech is a product/policy gate, not an implementation assumption.
+  The current contract forbids it; any change requires explicit owner approval.
+- If TTS is approved: benchmark [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M)
+  as the fast local baseline and [Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS)
+  as the heavier expressive option. [edge-tts](https://github.com/rany2/edge-tts)
+  is network-only and never a production dependency.
+- Taddy and paid transcription/TTS APIs stay out of the core one-feed workflow.
+- The experiment only continues if personalization, retained state,
+  editability, continuity, or a concrete distribution workflow creates
+  repeat value. Transcription or generated audio alone is not success.
+
 ## Development
 
 ```bash
