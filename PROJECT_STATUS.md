@@ -29,7 +29,9 @@ approval, provenance, and multi-clip rendering.
   bytes match all four approved hashes. Both videos play with captions on
   desktop/mobile. Public source receipts remain available. This qualifies the
   finished-proof showcase, not the real operator pilot in #11.
-  [Release receipt](docs/public-proof-release-2026-09-07.md).
+  A follow-up at `40c03b0` removes duplicate default VTT overlays while
+  preserving selectable tracks; fresh hosted desktop/mobile playback and
+  presentation checks pass. [Release receipt](docs/public-proof-release-2026-09-07.md).
 
 - **2026-09-07:** diagnosed missing public MP4s being served as successful HTML
   fallbacks; recovered the original approved videos/captions with exact receipt

@@ -27,8 +27,8 @@ Public proof: <https://mashup.highsignal.app>
 
 Current qualification (2026-09-07): both approved public examples now play on
 desktop and mobile, with exact media/caption hashes and readable source receipts.
-Visual review found duplicate default captions; the checked two-track correction
-awaits its follow-up release, so presentation qualification remains pending.
+The caption correction is also deployed: one burned-in layer appears by default,
+while optional English VTT tracks remain available.
 The public site is a finished-proof showcase; clipping remains a local operator
 workflow. One operator-authored synthetic archive export also plays locally.
 See the [release receipt](docs/public-proof-release-2026-09-07.md) and

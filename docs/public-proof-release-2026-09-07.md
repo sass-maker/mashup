@@ -36,3 +36,15 @@ Visual review found the default native VTT overlay duplicating captions already 
 Astro check/build pass. The complete `output/public-proof-caption-staging/` bundle preserves all approved media hashes and excludes editor/visual-lab. In isolated Chromium, the local complete bundle was served through route interception to preserve its production-origin absolute asset URLs. Both videos played past two seconds on desktop/mobile with tracks disabled by default. Explicitly enabling each track loaded its 11/4 cues. The initial localhost-only check exposed cross-origin caption loading rather than a product failure; the origin-preserving test passed.
 
 [Local mobile corrected captions](verification/2026-09-07-caption-local-mobile.png) and [local playback/optional-track assertions](verification/2026-09-07-caption-local.json). The approved next release must use the complete caption-staging bundle, retain deployment `837580c0-b324-4e6a-a53d-0fa3e974b748` as its immediate rollback, and verify ordinary public default-caption behavior before claiming presentation qualification.
+
+## Caption follow-up deployed and verified
+
+The approved complete caption-staging bundle deployed after exact source `40c03b061d56a21a23116630a4eb7afc9e5df3eb` [CI 34128659289](https://github.com/sass-maker/mashup/actions/runs/34128659289) passed. Provider confirmed production/main deployment `7f6d4f77-fd4c-4bdd-a722-15bc4fe35e66`, source `40c03b0`: https://7f6d4f77.mashup-a6h.pages.dev. The prior `837580c0-b324-4e6a-a53d-0fa3e974b748` is preserved for immediate rollback. No rollback or media regeneration occurred.
+
+Ordinary hosted requests (no interception) again matched all four approved media/caption hashes. Fresh desktop and mobile contexts played both videos beyond two seconds with 54–55 decoded frames, no errors and the same 47.15/13.16 second durations. Both native tracks were disabled by default; explicit activation loaded 11/4 cues. Visually inspected mobile screenshots show one burned-in caption layer, with no duplicate native overlay. The public finished-proof showcase now passes this bounded playback and presentation qualification; #11 remains open for the operator pilot.
+
+- [Final hosted assertions](verification/2026-09-07-caption-hosted.json)
+- [Desktop synthesis](verification/2026-09-07-caption-hosted-1440-0.png) · [Desktop compact](verification/2026-09-07-caption-hosted-1440-1.png)
+- [Mobile synthesis](verification/2026-09-07-caption-hosted-390-0.png) · [Mobile compact](verification/2026-09-07-caption-hosted-390-1.png)
+
+Earlier screenshots intentionally retain the initial duplicate-caption finding; these final captures are the accepted presentation evidence. All isolated browsers and the temporary localhost server were closed. Both complete staging bundles remain under ignored output for operator continuity; no generated MP4 or VTT was committed.
