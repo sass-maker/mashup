@@ -444,3 +444,14 @@ cd web && pnpm build       # the editor bundle
 
 Status, shipped features and open work: [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
 Docs index: [`docs/index.md`](docs/index.md).
+
+<!-- portfolio-retained-work:2026-09-07 -->
+## Retained work from the portfolio review
+
+These are unresolved requirements retained at the owner’s request. They are not completed features. This project is inactive; this list is reference material, not an active roadmap.
+
+### [Mashup] Ship the Startups clipping desk pilot
+
+Demonstrate one creator-authorized clipping workflow from archive and reviewed plan to a playable export with source provenance.
+
+Original requirements and discussion: [#11](https://github.com/sass-maker/mashup/issues/11).
