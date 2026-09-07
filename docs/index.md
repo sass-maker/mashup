@@ -42,22 +42,28 @@ sequencing actually beats retrieve-and-join.
 
 ## Specification
 
-The OpenSpec change [`build-mashup-mvp`](../openspec/changes/build-mashup-mvp/)
-is the authoritative scope document:
+The original MVP OpenSpec contract is retained in Git history at
+[`build-mashup-mvp`](https://github.com/sass-maker/mashup/tree/35127c38efa725a0a94464c22109676db322e25f/openspec/changes/build-mashup-mvp/). These are historical design documents;
+current scope and open work live in PROJECT_STATUS and GitHub Issues:
 
-- [proposal.md](../openspec/changes/build-mashup-mvp/proposal.md) — why, what
+- [proposal.md](https://github.com/sass-maker/mashup/blob/35127c38efa725a0a94464c22109676db322e25f/openspec/changes/build-mashup-mvp/proposal.md) — why, what
   changes, the six capabilities, the non-goals.
-- [design.md](../openspec/changes/build-mashup-mvp/design.md) — the pipeline
+- [design.md](https://github.com/sass-maker/mashup/blob/35127c38efa725a0a94464c22109676db322e25f/openspec/changes/build-mashup-mvp/design.md) — the pipeline
   diagram, the design rationale in condensed form, the dev corpus, the risks.
-- [tasks.md](../openspec/changes/build-mashup-mvp/tasks.md) — the build
+- [tasks.md](https://github.com/sass-maker/mashup/blob/35127c38efa725a0a94464c22109676db322e25f/openspec/changes/build-mashup-mvp/tasks.md) — the build
   checklist and the open questions.
 - Capability specs, in pipeline order:
-  [archive-ingestion](../openspec/changes/build-mashup-mvp/specs/archive-ingestion/spec.md),
-  [segment-understanding](../openspec/changes/build-mashup-mvp/specs/segment-understanding/spec.md),
-  [mashup-planning](../openspec/changes/build-mashup-mvp/specs/mashup-planning/spec.md),
-  [timeline-editing](../openspec/changes/build-mashup-mvp/specs/timeline-editing/spec.md),
-  [mashup-rendering](../openspec/changes/build-mashup-mvp/specs/mashup-rendering/spec.md),
-  [sequencing-validation](../openspec/changes/build-mashup-mvp/specs/sequencing-validation/spec.md).
+  [archive-ingestion](https://github.com/sass-maker/mashup/blob/35127c38efa725a0a94464c22109676db322e25f/openspec/changes/build-mashup-mvp/specs/archive-ingestion/spec.md),
+  [segment-understanding](https://github.com/sass-maker/mashup/blob/35127c38efa725a0a94464c22109676db322e25f/openspec/changes/build-mashup-mvp/specs/segment-understanding/spec.md),
+  [mashup-planning](https://github.com/sass-maker/mashup/blob/35127c38efa725a0a94464c22109676db322e25f/openspec/changes/build-mashup-mvp/specs/mashup-planning/spec.md),
+  [timeline-editing](https://github.com/sass-maker/mashup/blob/35127c38efa725a0a94464c22109676db322e25f/openspec/changes/build-mashup-mvp/specs/timeline-editing/spec.md),
+  [mashup-rendering](https://github.com/sass-maker/mashup/blob/35127c38efa725a0a94464c22109676db322e25f/openspec/changes/build-mashup-mvp/specs/mashup-rendering/spec.md),
+  [sequencing-validation](https://github.com/sass-maker/mashup/blob/35127c38efa725a0a94464c22109676db322e25f/openspec/changes/build-mashup-mvp/specs/sequencing-validation/spec.md).
+
+## Qualification
+
+- [2026-09-07 shareability qualification](shareability-qualification-2026-09-07.md)
+  — public media recovery, synthetic operator edit, checks, and remaining pilot gates.
 
 ## Tooling
 

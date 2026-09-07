@@ -1,6 +1,6 @@
 # Mashup — Project Status
 
-Last updated: 2026-08-30
+Last updated: 2026-09-07
 
 ## Why / What
 
@@ -23,6 +23,14 @@ approval, provenance, and multi-clip rendering.
   `fleet.mashup-media-receipt.v1`.
 
 ## Timeline
+
+- **2026-09-07:** diagnosed missing public MP4s being served as successful HTML
+  fallbacks; recovered the original approved videos/captions with exact receipt
+  hashes into a complete local staging bundle. Qualified one 36-second synthetic
+  operator-authored archive edit with real local enrichment/embeddings, eight
+  scores, approval, captions, render, and advancing browser playback. Automatic
+  podcast boundary acceptance, the real creator pilot, and public redeployment
+  remain unqualified. See [receipts](docs/shareability-qualification-2026-09-07.md).
 
 - **2026-08-30:** added the podcast RSS front door — feed resolution with
   pagination, episode listing and selection, and a licence-gated, hash-validated

@@ -25,6 +25,11 @@ remain local operator responsibilities.
 
 Public proof: <https://mashup.highsignal.app>
 
+Current qualification (2026-09-07): the public media URLs return homepage HTML,
+so public playback is blocked. The original approved media has been recovered
+and checked in a local staging bundle, and one operator-authored synthetic
+archive export plays locally. See the [evidence and reproduction steps](docs/shareability-qualification-2026-09-07.md).
+
 ## The thesis
 
 The bet is that **ordering is the hard part**. Semantic search over an archive
@@ -397,7 +402,7 @@ tool can produce.
 The reasoning behind each of those choices is in
 [`docs/decisions.md`](docs/decisions.md) and, for feed acquisition,
 [`docs/decisions-acquisition.md`](docs/decisions-acquisition.md); the pipeline stages and risks are in
-[`openspec/changes/build-mashup-mvp/design.md`](openspec/changes/build-mashup-mvp/design.md).
+[`openspec/changes/build-mashup-mvp/design.md`](https://github.com/sass-maker/mashup/blob/35127c38efa725a0a94464c22109676db322e25f/openspec/changes/build-mashup-mvp/design.md).
 
 ## Non-goals
 
@@ -455,3 +460,12 @@ These are unresolved requirements retained at the owner’s request. They are no
 Demonstrate one creator-authorized clipping workflow from archive and reviewed plan to a playable export with source provenance.
 
 Original requirements and discussion: [#11](https://github.com/sass-maker/mashup/issues/11).
+
+Reconciliation on 2026-09-07: **1 open issue, 0 open PRs, 0 closures**.
+The implementation is present; the real creator/operator pilot remains open.
+Next gates: approve and deploy the verified complete public proof bundle, replay
+both videos live, exercise a creator-authorized 3–5 clip batch, and measure the
+20–30 clip pilot's review time and quality. Automatic podcast editorial review
+rejected the synthetic text-card archive, so that gate is also unqualified;
+the successful local export used an explicitly reviewed operator-authored EDL.
+Synthetic speech and publishing remain outside the current boundary.
