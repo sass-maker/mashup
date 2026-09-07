@@ -24,6 +24,13 @@ approval, provenance, and multi-clip rendering.
 
 ## Timeline
 
+- **2026-09-07 public release:** deployed the complete approved proof bundle at
+  source `9673d781026dad85855edb5d8ac0b6c291f8d53a`; canonical public MP4/VTT
+  bytes match all four approved hashes. Both videos play with captions on
+  desktop/mobile. Public source receipts remain available. This qualifies the
+  finished-proof showcase, not the real operator pilot in #11.
+  [Release receipt](docs/public-proof-release-2026-09-07.md).
+
 - **2026-09-07:** diagnosed missing public MP4s being served as successful HTML
   fallbacks; recovered the original approved videos/captions with exact receipt
   hashes into a complete local staging bundle. Qualified one 36-second synthetic

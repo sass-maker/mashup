@@ -6,6 +6,9 @@ sequencing actually beats retrieve-and-join.
 
 ## Start here
 
+- [Public proof release](public-proof-release-2026-09-07.md) — deployed media
+  identity, desktop/mobile playback and rollback target.
+
 - [README](../README.md) — what it is, the thesis, install, configuration, the
   stage-by-stage commands, the dev corpus and the output layout.
 - [PROJECT_STATUS.md](../PROJECT_STATUS.md) — what is shipped, what is in

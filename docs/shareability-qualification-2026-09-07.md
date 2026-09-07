@@ -1,5 +1,9 @@
 # Shareability qualification — 2026-09-07
 
+The public-media failure below was repaired by the later approved
+[production release](public-proof-release-2026-09-07.md). The diagnosis and local
+recovery evidence remain as historical context.
+
 ## Public proof diagnosis and prepared recovery
 
 The current public video URLs both return HTTP 200 **HTML**, not media:

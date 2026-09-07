@@ -25,10 +25,12 @@ remain local operator responsibilities.
 
 Public proof: <https://mashup.highsignal.app>
 
-Current qualification (2026-09-07): the public media URLs return homepage HTML,
-so public playback is blocked. The original approved media has been recovered
-and checked in a local staging bundle, and one operator-authored synthetic
-archive export plays locally. See the [evidence and reproduction steps](docs/shareability-qualification-2026-09-07.md).
+Current qualification (2026-09-07): both approved public examples now play on
+desktop and mobile, with exact media/caption hashes and readable source receipts.
+The public site is a finished-proof showcase; clipping remains a local operator
+workflow. One operator-authored synthetic archive export also plays locally.
+See the [release receipt](docs/public-proof-release-2026-09-07.md) and
+[evidence and reproduction steps](docs/shareability-qualification-2026-09-07.md).
 
 ## The thesis
 
@@ -463,8 +465,8 @@ Original requirements and discussion: [#11](https://github.com/sass-maker/mashup
 
 Reconciliation on 2026-09-07: **1 open issue, 0 open PRs, 0 closures**.
 The implementation is present; the real creator/operator pilot remains open.
-Next gates: approve and deploy the verified complete public proof bundle, replay
-both videos live, exercise a creator-authorized 3–5 clip batch, and measure the
+The complete public proof bundle is deployed and both videos play live.
+Remaining gates: exercise a creator-authorized 3–5 clip batch, and measure the
 20–30 clip pilot's review time and quality. Automatic podcast editorial review
 rejected the synthetic text-card archive, so that gate is also unqualified;
 the successful local export used an explicitly reviewed operator-authored EDL.
