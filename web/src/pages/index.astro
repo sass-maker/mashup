@@ -290,21 +290,53 @@ const jsonLd = {
       </section>
     </main>
 
-    <footer class="site-footer">
-      <saas-maker-newsletter-capture
-        class="site-footer-signup"
+    <footer aria-label="Mashup footer">
+      <fleet-footer-extension
+        data-fleet-footer-project="mashup"
         product-name="Mashup"
-        catalog-id="mashup"
-        kind="newsletter"
-        source="footer"
-        privacy-url="https://sassmaker.com/privacy"
+        signature-name="Mashup"
+        signature-font="inherit"
         theme="light"
-      ></saas-maker-newsletter-capture>
-      <div class="site-footer-meta">
-        <span>Mashup</span>
-        <p>Source-faithful edits from approved media. No generated voices. No opaque cuts. Microsoft Clarity measures this public proof site only. App Health records page views and named actions with a project-scoped anonymous visitor ID in first-party storage for up to 90 days.</p>
-        <a href="https://github.com/sass-maker/mashup#the-transcript-editor" target="_blank" rel="noreferrer">Local editor guide <span aria-hidden="true">↗</span></a>
-      </div>
+        surface="web"
+        font-base="/fonts/fleet-footer-precise-v1/"
+        art-src="/footer-art/mashup.webp"
+        art-alt="Mashup: A local editing bench centers an assembled filmstrip and cutting surface. Original abstract frames, owned-source reels and retained cut slips surround an editable sequence folio."
+        art-width="2170"
+        art-height="725"
+        art-position="50% 50%"
+        art-credit="Original illustration for Mashup"
+        style="font-family: var(--body); --fleet-footer-canvas: var(--paper); --fleet-footer-lower: var(--surface-muted); --fleet-footer-edge: 20px; --fleet-footer-max-width: 1380px;"
+      >
+        <div slot="navigation" data-fleet-footer-navigation class="mashup-footer-native">
+          <p>Source-faithful edits from approved media. No generated voices. No opaque cuts. Microsoft Clarity measures this public proof site only. App Health records page views and named actions with a project-scoped anonymous visitor ID in first-party storage for up to 90 days.</p>
+          <nav aria-label="Mashup resources" class="mashup-footer-groups">
+            <div>
+              <h2 data-fleet-footer-group-label>Explore</h2>
+              <a href="#primary-result">The proof</a>
+              <a href="#construction">How it was assembled</a>
+              <a href="#provenance">Sources and rights</a>
+            </div>
+            <div>
+              <h2 data-fleet-footer-group-label>Use and records</h2>
+              <a href="https://github.com/sass-maker/mashup#readme" target="_blank" rel="noreferrer">Run Mashup locally</a>
+              <a href="https://github.com/sass-maker/mashup#the-transcript-editor" target="_blank" rel="noreferrer">Local editor guide</a>
+              <a href="https://github.com/sass-maker/mashup/issues/12" target="_blank" rel="noreferrer">Release record</a>
+              <a href="https://sassmaker.com/privacy">Privacy</a>
+            </div>
+          </nav>
+        </div>
+        <saas-maker-newsletter-capture
+          slot="capture"
+          product-name="Mashup"
+          catalog-id="mashup"
+          kind="newsletter"
+          source="footer"
+          privacy-url="https://sassmaker.com/privacy"
+          theme="light"
+          layout="compact"
+          integrated
+        ></saas-maker-newsletter-capture>
+      </fleet-footer-extension>
     </footer>
 
     <script>
@@ -330,8 +362,8 @@ const jsonLd = {
         if (name && typeof appHealth?.track === 'function') appHealth.track(name);
       });
     </script>
-    <script is:inline type="module" src="https://sassmaker.com/newsletter-capture.js"></script>
-    <script is:inline src="https://sassmaker.com/project-strip.js" data-project="mashup" defer></script>
-    <script is:inline src="https://sassmaker.com/ai-chat-footer.js" data-name="Mashup" defer></script>
+    <script is:inline type="module" src="https://sassmaker.com/newsletter-capture.js?v=precise-b0adaa67"></script>
+    <script is:inline src="https://sassmaker.com/project-strip.js?v=precise-b0adaa67" data-project="mashup" data-theme="light" data-surface="web" data-host-only="true" defer></script>
+    <script is:inline src="https://sassmaker.com/ai-chat-footer.js?v=precise-b0adaa67" data-project="mashup" data-name="Mashup" data-theme="light" data-surface="web" data-host-only="true" data-capture="false" defer></script>
   </body>
 </html>
