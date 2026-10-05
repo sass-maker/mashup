@@ -11,6 +11,20 @@ The finished-example showcase at https://mashup.highsignal.app now serves real a
 - Provider confirmed production/main deployment `837580c0-b324-4e6a-a53d-0fa3e974b748`, source `9673d78`: https://837580c0.mashup-a6h.pages.dev.
 - Never replace this release with plain `web/dist`: that build omits generated media. Re-run the complete-bundle guard before every deployment.
 
+### Guarded publisher
+
+Run `pnpm deploy /absolute/path/to/complete-public-proof-bundle` from `web/`
+through Fleet Workspace after the exact main commit passes CI. The publisher
+refuses dirty or unpublished source, builds the current site, compares every
+public static file to the supplied bundle, rejects operator routes and
+unexpected files, and verifies both approved media/caption receipts with the
+existing MP4/WebVTT guard before invoking the existing Mashup Pages target.
+Generated media remains outside Git. A build alone cannot produce this bundle;
+retain the approved media when staging new static files. After publication,
+verify canonical asset hashes and both players; provider success is not playback
+proof. The publisher uses Python's standard library and the already-used pinned
+Wrangler CLI, without adding production dependencies.
+
 ## Hosted acceptance
 
 Ordinary canonical public URLs for both MP4s and both VTTs were downloaded read-only and matched the approved receipts byte-for-byte and SHA-256-for-SHA-256. Exact hashes remain in the [recovery receipt](shareability-qualification-2026-09-07.md). Both public JSON receipts decode successfully, report approved status and retain licensed source provenance.
