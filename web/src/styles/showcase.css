@@ -409,23 +409,22 @@ main { overflow: hidden; }
 .release-boundary li span { color: #434d6f; }
 .boundary-actions { grid-column: 1 / -1; margin-top: 0; }
 
-.site-footer {
-  width: min(100% - 40px, 1380px);
-  padding: 28px 0;
-  margin: 0 auto;
+.mashup-footer-native {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  padding: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 24px;
+  gap: 14px;
   color: var(--ink-muted);
-  border-top: 1px solid var(--rule-strong);
   font-size: 0.75rem;
 }
 
-.site-footer-signup { display: block; width: min(100%, 680px); margin: 0 auto; }
-.site-footer-meta { display: grid; grid-template-columns: 1fr auto 1fr; gap: 30px; align-items: center; }
-.site-footer-meta > span { color: var(--ink); font-size: 1rem; font-weight: 760; }
-.site-footer-meta p { margin: 0; text-align: center; }
-.site-footer-meta a { justify-self: end; }
+.mashup-footer-native > p { max-width: 90ch; margin: 0; }
+.mashup-footer-groups { display: flex; flex-wrap: wrap; gap: 18px 32px; }
+.mashup-footer-groups > div { display: grid; flex: 1 1 160px; align-content: start; gap: 4px; min-width: 0; }
+.mashup-footer-groups h2 { margin: 0 0 4px; color: var(--ink); }
+.mashup-footer-native a { text-underline-offset: 0.2em; }
 
 @media (max-width: 1000px) {
   .site-header { grid-template-columns: 1fr auto; }
@@ -438,7 +437,7 @@ main { overflow: hidden; }
 }
 
 @media (max-width: 760px) {
-  .site-header, .hero, .construction, .provenance, .comparison, .release-boundary, .site-footer {
+  .site-header, .hero, .construction, .provenance, .comparison, .release-boundary {
     width: min(100% - 28px, 620px);
   }
 
@@ -490,15 +489,7 @@ main { overflow: hidden; }
   .release-boundary li { grid-template-columns: 1fr; gap: 5px; }
   .boundary-actions { grid-column: 1; }
 
-  .site-footer {
-    padding: 28px 0;
-    grid-template-columns: 1fr;
-    gap: 12px;
-  }
-
-  .site-footer-meta { grid-template-columns: 1fr; gap: 12px; }
-  .site-footer-meta p { text-align: left; }
-  .site-footer-meta a { justify-self: start; }
+  fleet-footer-extension { --fleet-footer-edge: 14px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
