@@ -54,6 +54,11 @@ def main() -> None:
     bundle = args.bundle.resolve()
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip()
     subprocess.run(["git", "diff", "--quiet", "HEAD"], cwd=REPO, check=True)
+    untracked = subprocess.check_output(
+        ["git", "ls-files", "--others", "--exclude-standard"], cwd=REPO, text=True
+    ).strip()
+    if untracked:
+        parser.exit(1, "Refusing public deployment: checkout has unpublished source files\n")
     main_ref = subprocess.check_output(
         ["git", "ls-remote", "origin", "refs/heads/main"], cwd=REPO, text=True
     ).split()
