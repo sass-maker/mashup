@@ -1,3 +1,5 @@
+> **Moved.** Mashup now lives in [Fleet Social](https://github.com/sass-maker/fleet-social) at `tools/mashup/` (merged in sass-maker/fleet-social#14, from this repo at `1adcf83`). This repository is kept for history and is no longer developed.
+
 # Mashup
 
 > Canonical source: this standalone repository.
